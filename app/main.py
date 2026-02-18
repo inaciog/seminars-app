@@ -1542,6 +1542,64 @@ async def download_file(file_id: int, db: Session = Depends(get_db), user: dict 
         media_type=file_record.content_type
     )
 
+# Additional upload endpoint for frontend compatibility
+@app.post("/api/v1/seminars/seminars/{seminar_id}/upload")
+async def upload_file_v1(
+    seminar_id: int,
+    file: UploadFile = File(...),
+    file_category: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Upload file for a seminar (frontend compatibility endpoint)."""
+    seminar = db.get(Seminar, seminar_id)
+    if not seminar:
+        raise HTTPException(status_code=404, detail="Seminar not found")
+    
+    uploaded = save_uploaded_file(file, seminar_id, file_category, db)
+    return {"success": True, "file_id": uploaded.id, "message": "File uploaded successfully"}
+
+# Additional files endpoints for frontend compatibility
+@app.get("/api/v1/seminars/seminars/{seminar_id}/files")
+async def list_files_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """List files for a seminar (frontend compatibility endpoint)."""
+    statement = select(UploadedFile).where(UploadedFile.seminar_id == seminar_id)
+    files = db.exec(statement).all()
+    return [
+        {
+            "id": f.id,
+            "original_filename": f.original_filename,
+            "file_category": f.file_category,
+            "file_size": f.file_size,
+            "content_type": f.content_type,
+            "uploaded_at": f.uploaded_at.isoformat()
+        }
+        for f in files
+    ]
+
+@app.delete("/api/v1/seminars/seminars/{seminar_id}/files/{file_id}")
+async def delete_file_v1(
+    seminar_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Delete a file (frontend compatibility endpoint)."""
+    file_record = db.get(UploadedFile, file_id)
+    if not file_record or file_record.seminar_id != seminar_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Delete from disk
+    file_path = Path(settings.uploads_dir) / file_record.storage_filename
+    if file_path.exists():
+        file_path.unlink()
+    
+    # Delete from database
+    db.delete(file_record)
+    db.commit()
+    
+    return {"success": True, "message": "File deleted successfully"}
+
 # ============================================================================
 # API Routes - External (for Dashboard)
 # ============================================================================
