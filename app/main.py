@@ -768,13 +768,26 @@ async def speaker_availability_page(token: str, db: Session = Depends(get_db)):
     suggestion = db_token.suggestion
     plan = db.get(SemesterPlan, suggestion.semester_plan_id) if suggestion.semester_plan_id else None
     
+    # Get semester date range
+    semester_start = None
+    semester_end = None
+    if plan:
+        # Get all slots for this plan to determine date range
+        slots = db.exec(select(SeminarSlot).where(SeminarSlot.semester_plan_id == plan.id)).all()
+        if slots:
+            dates = [slot.date for slot in slots]
+            semester_start = min(dates).isoformat()
+            semester_end = max(dates).isoformat()
+    
     return HTMLResponse(content=get_availability_page_html(
         speaker_name=suggestion.speaker_name,
         speaker_email=suggestion.speaker_email,
         speaker_affiliation=suggestion.speaker_affiliation,
         suggested_topic=suggestion.suggested_topic,
         semester_plan=plan.name if plan else None,
-        token=token
+        token=token,
+        semester_start=semester_start,
+        semester_end=semester_end
     ))
 
 @app.get("/speaker/info/{token}", response_class=HTMLResponse)
@@ -801,7 +814,8 @@ async def speaker_info_page(token: str, db: Session = Depends(get_db)):
         speaker_affiliation=suggestion.speaker_affiliation,
         seminar_title=seminar.title if seminar else None,
         seminar_date=seminar.date.strftime('%B %d, %Y') if seminar else None,
-        token=token
+        token=token,
+        seminar_id=seminar.id if seminar else None
     ))
 
 # ============================================================================
