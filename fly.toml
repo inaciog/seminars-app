@@ -1,6 +1,6 @@
 # fly.toml
 app = 'seminars-app'
-primary_region = 'ams'
+primary_region = 'iad'
 
 [build]
   dockerfile = "Dockerfile"
