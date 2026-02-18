@@ -48,6 +48,7 @@ interface SeminarSlot {
   status: 'available' | 'reserved' | 'confirmed' | 'cancelled';
   assigned_seminar_id?: number;
   assigned_speaker_name?: string;
+  assigned_suggestion_id?: number;
 }
 
 interface SpeakerAvailability {
@@ -399,18 +400,18 @@ export function SemesterPlanning() {
                             }
                           }}
                           onGenerateInfoLink={() => {
-                            // Find the suggestion associated with this slot's assigned speaker
-                            if (slot.assigned_seminar_id) {
-                              // Find suggestion by matching speaker name (case-insensitive, trimmed)
-                              const suggestion = boardData?.suggestions.find(
+                            if (!slot.assigned_seminar_id) return;
+
+                            const suggestion = boardData?.suggestions.find(s => s.id === slot.assigned_suggestion_id)
+                              ?? boardData?.suggestions.find(
                                 s => s.speaker_name?.trim().toLowerCase() === slot.assigned_speaker_name?.trim().toLowerCase()
                               );
-                              if (suggestion?.id) {
-                                generateInfoLinkMutation.mutate({
-                                  seminarId: slot.assigned_seminar_id,
-                                  suggestionId: suggestion.id
-                                });
-                              }
+
+                            if (suggestion?.id) {
+                              generateInfoLinkMutation.mutate({
+                                seminarId: slot.assigned_seminar_id,
+                                suggestionId: suggestion.id
+                              });
                             }
                           }}
                           onDraftEmail={async (type) => {
@@ -424,9 +425,10 @@ export function SemesterPlanning() {
                               deadline.setTime(today.getTime() + 3 * 24 * 60 * 60 * 1000);
                             }
                             
-                            const suggestion = boardData?.suggestions.find(
-                              s => s.speaker_name?.trim().toLowerCase() === slot.assigned_speaker_name?.trim().toLowerCase()
-                            );
+                            const suggestion = boardData?.suggestions.find(s => s.id === slot.assigned_suggestion_id)
+                              ?? boardData?.suggestions.find(
+                                s => s.speaker_name?.trim().toLowerCase() === slot.assigned_speaker_name?.trim().toLowerCase()
+                              );
                             
                             // Auto-generate info link for info_request emails
                             let infoLink = '';
@@ -458,7 +460,7 @@ export function SemesterPlanning() {
                             
                             setEmailDraft({
                               type,
-                              speakerName: slot.assigned_speaker_name || '',
+                              speakerName: slot.assigned_speaker_name || suggestion?.speaker_name || '',
                               slotDate: new Date(slot.date).toLocaleDateString('en-US', { 
                                 month: 'long', 
                                 day: 'numeric', 
