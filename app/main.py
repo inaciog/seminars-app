@@ -218,6 +218,40 @@ class SpeakerToken(SQLModel, table=True):
     suggestion: SpeakerSuggestion = Relationship()
     seminar: Optional[Seminar] = Relationship()
 
+class SeminarDetails(SQLModel, table=True):
+    __tablename__ = "seminar_details"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    seminar_id: int = Field(foreign_key="seminars.id", unique=True)
+    
+    # Travel info
+    check_in_date: Optional[date_type] = None
+    check_out_date: Optional[date_type] = None
+    passport_number: Optional[str] = None
+    passport_country: Optional[str] = None
+    departure_city: Optional[str] = None
+    travel_method: Optional[str] = "flight"
+    estimated_travel_cost: Optional[float] = None
+    
+    # Accommodation
+    needs_accommodation: bool = Field(default=True)
+    accommodation_nights: Optional[int] = None
+    estimated_hotel_cost: Optional[float] = None
+    
+    # Payment info
+    payment_email: Optional[str] = None
+    beneficiary_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_address: Optional[str] = None
+    swift_code: Optional[str] = None
+    currency: Optional[str] = "USD"
+    beneficiary_address: Optional[str] = None
+    
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    seminar: Seminar = Relationship()
+
 # ============================================================================
 # Pydantic Models
 # ============================================================================
@@ -407,6 +441,53 @@ class SpeakerTokenVerifyRequest(BaseModel):
 
 class SpeakerAvailabilitySubmit(BaseModel):
     availabilities: List[SpeakerAvailabilityCreate]
+
+class SeminarDetailsUpdate(BaseModel):
+    title: Optional[str] = None
+    abstract: Optional[str] = None
+    check_in_date: Optional[date_type] = None
+    check_out_date: Optional[date_type] = None
+    passport_number: Optional[str] = None
+    passport_country: Optional[str] = None
+    payment_email: Optional[str] = None
+    beneficiary_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_address: Optional[str] = None
+    swift_code: Optional[str] = None
+    currency: Optional[str] = None
+    beneficiary_address: Optional[str] = None
+    departure_city: Optional[str] = None
+    travel_method: Optional[str] = None
+    estimated_travel_cost: Optional[str] = None
+    needs_accommodation: Optional[bool] = None
+    accommodation_nights: Optional[str] = None
+    estimated_hotel_cost: Optional[str] = None
+
+class SeminarDetailsResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    seminar_id: int
+    check_in_date: Optional[date_type]
+    check_out_date: Optional[date_type]
+    passport_number: Optional[str]
+    passport_country: Optional[str]
+    payment_email: Optional[str]
+    beneficiary_name: Optional[str]
+    bank_account_number: Optional[str]
+    bank_name: Optional[str]
+    bank_address: Optional[str]
+    swift_code: Optional[str]
+    currency: Optional[str]
+    beneficiary_address: Optional[str]
+    departure_city: Optional[str]
+    travel_method: Optional[str]
+    estimated_travel_cost: Optional[float]
+    needs_accommodation: bool
+    accommodation_nights: Optional[int]
+    estimated_hotel_cost: Optional[float]
+    updated_at: datetime
 
 # ============================================================================
 # Auth
@@ -803,6 +884,142 @@ async def delete_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user
     db.delete(seminar)
     db.commit()
     return {"success": True}
+
+# Seminar details endpoints
+@app.get("/api/v1/seminars/seminars/{seminar_id}/details")
+async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Get seminar with details."""
+    seminar = db.get(Seminar, seminar_id)
+    if not seminar:
+        raise HTTPException(status_code=404, detail="Seminar not found")
+    
+    # Get or create details
+    details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
+    details = db.exec(details_stmt).first()
+    
+    if not details:
+        details = SeminarDetails(seminar_id=seminar_id)
+        db.add(details)
+        db.commit()
+        db.refresh(details)
+    
+    return {
+        "id": seminar.id,
+        "title": seminar.title,
+        "abstract": seminar.abstract,
+        "date": seminar.date.isoformat(),
+        "start_time": seminar.start_time,
+        "end_time": seminar.end_time,
+        "speaker": {
+            "id": seminar.speaker.id,
+            "name": seminar.speaker.name,
+            "email": seminar.speaker.email,
+            "affiliation": seminar.speaker.affiliation,
+        } if seminar.speaker else None,
+        "room": seminar.room.name if seminar.room else None,
+        "status": seminar.status,
+        "info": {
+            "check_in_date": details.check_in_date.isoformat() if details.check_in_date else None,
+            "check_out_date": details.check_out_date.isoformat() if details.check_out_date else None,
+            "passport_number": details.passport_number,
+            "passport_country": details.passport_country,
+            "payment_email": details.payment_email,
+            "beneficiary_name": details.beneficiary_name,
+            "bank_account_number": details.bank_account_number,
+            "bank_name": details.bank_name,
+            "bank_address": details.bank_address,
+            "swift_code": details.swift_code,
+            "currency": details.currency,
+            "beneficiary_address": details.beneficiary_address,
+            "departure_city": details.departure_city,
+            "travel_method": details.travel_method,
+            "estimated_travel_cost": details.estimated_travel_cost,
+            "needs_accommodation": details.needs_accommodation,
+            "accommodation_nights": details.accommodation_nights,
+            "estimated_hotel_cost": details.estimated_hotel_cost,
+        }
+    }
+
+@app.put("/api/v1/seminars/seminars/{seminar_id}/details")
+async def update_seminar_details_v1(
+    seminar_id: int,
+    data: SeminarDetailsUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Update seminar details."""
+    seminar = db.get(Seminar, seminar_id)
+    if not seminar:
+        raise HTTPException(status_code=404, detail="Seminar not found")
+    
+    # Update seminar fields
+    if data.title is not None:
+        seminar.title = data.title
+    if data.abstract is not None:
+        seminar.abstract = data.abstract
+    
+    # Get or create details
+    details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
+    details = db.exec(details_stmt).first()
+    
+    if not details:
+        details = SeminarDetails(seminar_id=seminar_id)
+        db.add(details)
+    
+    # Update details fields
+    if data.check_in_date is not None:
+        details.check_in_date = data.check_in_date
+    if data.check_out_date is not None:
+        details.check_out_date = data.check_out_date
+    if data.passport_number is not None:
+        details.passport_number = data.passport_number
+    if data.passport_country is not None:
+        details.passport_country = data.passport_country
+    if data.payment_email is not None:
+        details.payment_email = data.payment_email
+    if data.beneficiary_name is not None:
+        details.beneficiary_name = data.beneficiary_name
+    if data.bank_account_number is not None:
+        details.bank_account_number = data.bank_account_number
+    if data.bank_name is not None:
+        details.bank_name = data.bank_name
+    if data.bank_address is not None:
+        details.bank_address = data.bank_address
+    if data.swift_code is not None:
+        details.swift_code = data.swift_code
+    if data.currency is not None:
+        details.currency = data.currency
+    if data.beneficiary_address is not None:
+        details.beneficiary_address = data.beneficiary_address
+    if data.departure_city is not None:
+        details.departure_city = data.departure_city
+    if data.travel_method is not None:
+        details.travel_method = data.travel_method
+    if data.estimated_travel_cost is not None:
+        try:
+            details.estimated_travel_cost = float(data.estimated_travel_cost) if data.estimated_travel_cost else None
+        except ValueError:
+            pass
+    if data.needs_accommodation is not None:
+        details.needs_accommodation = data.needs_accommodation
+    if data.accommodation_nights is not None:
+        try:
+            details.accommodation_nights = int(data.accommodation_nights) if data.accommodation_nights else None
+        except ValueError:
+            pass
+    if data.estimated_hotel_cost is not None:
+        try:
+            details.estimated_hotel_cost = float(data.estimated_hotel_cost) if data.estimated_hotel_cost else None
+        except ValueError:
+            pass
+    
+    details.updated_at = datetime.utcnow()
+    seminar.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(details)
+    
+    return {"success": True, "message": "Details updated successfully"}
 
 # ============================================================================
 # API Routes - Semester Planning
