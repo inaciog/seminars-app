@@ -555,15 +555,8 @@ async def require_auth(request: Request, call_next):
     if path == "/public":
         return await call_next(request)
     
-    # Check for token
-    token = request.query_params.get("token") or request.cookies.get("token")
-    
-    if not token or not verify_token(token):
-        return_url = f"{settings.app_url}{request.url.path}"
-        return RedirectResponse(
-            f"{settings.auth_service_url}/login?returnTo={return_url}"
-        )
-    
+    # Let React app handle auth - don't redirect, just serve the app
+    # The React app will check for token and redirect if needed
     return await call_next(request)
 
 # ============================================================================
