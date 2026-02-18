@@ -9,7 +9,7 @@ primary_region = 'iad'
   ENVIRONMENT = "production"
   PORT = "8080"
   HOST = "0.0.0.0"
-  DATABASE_URL = "sqlite:////tmp/seminars.db"
+  DATABASE_URL = "/tmp/seminars.db"
   UPLOADS_DIR = "/tmp/uploads"
   BACKUP_DIR = "/tmp/backups"
 
