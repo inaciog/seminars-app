@@ -5,8 +5,8 @@
 set -e
 
 # Configuration
-BACKUP_DIR="${BACKUP_DIR:-/data/backups}"
-DB_PATH="${DB_PATH:-/data/seminars.db}"
+BACKUP_DIR="${BACKUP_DIR:-/tmp/backups}"
+DB_PATH="${DB_PATH:-/tmp/seminars.db}"
 RETENTION_DAYS=180
 DATE=$(date +%Y%m%d_%H%M%S)
 HOSTNAME=$(hostname)

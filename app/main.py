@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     jwt_secret: str = "your-secret-key-change-in-production"
     api_secret: str = "your-api-secret-for-dashboard"
     master_password: str = "i486983nacio:!"
-    database_url: str = "/data/seminars.db"
-    uploads_dir: str = "/data/uploads"
+    database_url: str = "/tmp/seminars.db"
+    uploads_dir: str = "/tmp/uploads"
     auth_service_url: str = "https://inacio-auth.fly.dev"
     app_url: str = "https://seminars-app.fly.dev"
     
@@ -352,10 +352,10 @@ def save_uploaded_file(file: UploadFile, seminar_id: int, category: Optional[str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup - ensure data directory exists first
-    Path("/data").mkdir(parents=True, exist_ok=True)
-    Path("/data/uploads").mkdir(parents=True, exist_ok=True)
-    Path("/data/backups").mkdir(parents=True, exist_ok=True)
+    # Startup - ensure directories exist first
+    Path("/tmp").mkdir(parents=True, exist_ok=True)
+    Path("/tmp/uploads").mkdir(parents=True, exist_ok=True)
+    Path("/tmp/backups").mkdir(parents=True, exist_ok=True)
     
     # Now create engine and tables
     eng = get_engine()

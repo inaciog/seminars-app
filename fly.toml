@@ -9,9 +9,9 @@ primary_region = 'iad'
   ENVIRONMENT = "production"
   PORT = "8080"
   HOST = "0.0.0.0"
-  DATABASE_URL = "sqlite:////data/seminars.db"
-  UPLOADS_DIR = "/data/uploads"
-  BACKUP_DIR = "/data/backups"
+  DATABASE_URL = "sqlite:////tmp/seminars.db"
+  UPLOADS_DIR = "/tmp/uploads"
+  BACKUP_DIR = "/tmp/backups"
 
 [http_service]
   internal_port = 8080
@@ -27,11 +27,6 @@ primary_region = 'iad'
     grace_period = '40s'
     method = 'GET'
     path = '/api/health'
-
-[[mounts]]
-  source = 'seminars_data'
-  destination = '/data'
-  processes = ['app']
 
 [[vm]]
   memory = '512mb'
