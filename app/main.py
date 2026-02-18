@@ -1569,19 +1569,27 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
     suggestions_stmt = select(SpeakerSuggestion).where(SpeakerSuggestion.semester_plan_id == plan_id)
     suggestions = db.exec(suggestions_stmt).all()
     
+    # Build slots response with assigned speaker name
+    slots_response = []
+    for s in slots:
+        slot_data = {
+            "id": s.id,
+            "date": s.date.isoformat(),
+            "start_time": s.start_time,
+            "end_time": s.end_time,
+            "room": s.room,
+            "status": s.status,
+            "assigned_seminar_id": s.assigned_seminar_id
+        }
+        # If slot has an assigned seminar, get the speaker name
+        if s.assigned_seminar_id:
+            seminar = db.get(Seminar, s.assigned_seminar_id)
+            if seminar:
+                slot_data["assigned_speaker_name"] = seminar.speaker_name
+        slots_response.append(slot_data)
+    
     return {
-        "slots": [
-            {
-                "id": s.id,
-                "date": s.date.isoformat(),
-                "start_time": s.start_time,
-                "end_time": s.end_time,
-                "room": s.room,
-                "status": s.status,
-                "assigned_seminar_id": s.assigned_seminar_id
-            }
-            for s in slots
-        ],
+        "slots": slots_response,
         "suggestions": [
             {
                 "id": s.id,
