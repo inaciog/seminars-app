@@ -1584,20 +1584,15 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         # If slot has an assigned seminar, get the speaker name
         if s.assigned_seminar_id:
             seminar = db.get(Seminar, s.assigned_seminar_id)
-            print(f"DEBUG Slot {s.id}: assigned_seminar_id={s.assigned_seminar_id}, seminar={seminar}", flush=True)
             if seminar:
-                print(f"DEBUG Slot {s.id}: seminar.speaker_id={seminar.speaker_id}", flush=True)
                 # Access speaker through the relationship
                 try:
                     speaker_name = seminar.speaker.name if seminar.speaker else None
-                    print(f"DEBUG Slot {s.id}: speaker_name from relationship={speaker_name}", flush=True)
                     if speaker_name:
                         slot_data["assigned_speaker_name"] = speaker_name
-                except Exception as e:
-                    print(f"DEBUG Slot {s.id}: Error accessing speaker relationship: {e}", flush=True)
+                except Exception:
                     # If speaker relationship isn't loaded, query it directly
                     speaker = db.get(Speaker, seminar.speaker_id)
-                    print(f"DEBUG Slot {s.id}: speaker from direct query={speaker}", flush=True)
                     if speaker:
                         slot_data["assigned_speaker_name"] = speaker.name
         slots_response.append(slot_data)
@@ -1632,14 +1627,36 @@ async def assign_speaker_to_slot(
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     
+    # Find or create speaker based on suggestion
+    speaker_id = suggestion.speaker_id
+    if not speaker_id:
+        # Try to find existing speaker by name
+        speaker_stmt = select(Speaker).where(Speaker.name == suggestion.speaker_name)
+        existing_speaker = db.exec(speaker_stmt).first()
+        if existing_speaker:
+            speaker_id = existing_speaker.id
+        else:
+            # Create a new speaker from suggestion data
+            new_speaker = Speaker(
+                name=suggestion.speaker_name,
+                email=suggestion.speaker_email,
+                affiliation=suggestion.speaker_affiliation
+            )
+            db.add(new_speaker)
+            db.commit()
+            db.refresh(new_speaker)
+            speaker_id = new_speaker.id
+            # Update suggestion with the new speaker_id
+            suggestion.speaker_id = speaker_id
+    
     # Create a seminar from the suggestion
     seminar = Seminar(
         title=suggestion.suggested_topic or f"Seminar by {suggestion.speaker_name}",
         date=slot.date,
         start_time=slot.start_time,
         end_time=slot.end_time,
-        speaker_id=suggestion.speaker_id or 0,  # Will need to handle this better
-        room_id=None,  # Will need to map room name to room_id
+        speaker_id=speaker_id,
+        room_id=None,
         status="planned"
     )
     db.add(seminar)
