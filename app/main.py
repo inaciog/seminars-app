@@ -662,7 +662,14 @@ async def log_requests(request: Request, call_next):
     
     return response
 
-app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
+FRONTEND_DIST_DIR = Path("frontend/dist")
+FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
+
+if FRONTEND_ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR)), name="assets")
+else:
+    logger.warning(f"Frontend assets directory not found: {FRONTEND_ASSETS_DIR}")
+
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -674,7 +681,14 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    with open("frontend/dist/index.html", "r") as f:
+    index_file = FRONTEND_DIST_DIR / "index.html"
+    if not index_file.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Frontend build is not available. Please build the frontend assets.",
+        )
+
+    with index_file.open("r") as f:
         return f.read()
 
 @app.get("/public", response_class=HTMLResponse)
