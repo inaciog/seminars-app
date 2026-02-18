@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from sqlmodel import SQLModel, Field, Session, create_engine, select, Relationship
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_settings import BaseSettings
 
 # ============================================================================
@@ -337,7 +337,16 @@ class SeminarResponse(BaseModel):
     website_updated: bool
     catering_ordered: bool
     speaker: SpeakerResponse
-    room: Optional[RoomResponse]
+    room: Optional[str]  # Just the room name, not full object
+    
+    @field_validator('room', mode='before')
+    @classmethod
+    def extract_room_name(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, Room):
+            return v.name
+        return str(v)
 
 # Semester Planning Pydantic Models
 class SemesterPlanCreate(BaseModel):
