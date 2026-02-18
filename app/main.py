@@ -345,9 +345,11 @@ def save_uploaded_file(file: UploadFile, seminar_id: int, category: Optional[str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup - ensure data directory exists
+    Path("/data").mkdir(parents=True, exist_ok=True)
+    Path("/data/uploads").mkdir(parents=True, exist_ok=True)
+    Path("/data/backups").mkdir(parents=True, exist_ok=True)
     SQLModel.metadata.create_all(engine)
-    ensure_uploads_dir()
     yield
     # Shutdown
 
