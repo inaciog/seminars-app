@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState, useEffect, Component, ReactNode } from 'react';
+import { useState, useEffect } from 'react';
 import { SeminarsModule } from './modules/seminars/SeminarsModule';
 import './index.css';
 
@@ -29,44 +29,6 @@ const getToken = (): string | null => {
   // Then check localStorage
   return localStorage.getItem('seminars_token');
 };
-
-// Error Boundary
-interface ErrorBoundaryProps {
-  children: ReactNode;
-}
-
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
-
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.error('Error caught by boundary:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-red-50 p-8">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-          <pre className="bg-white p-4 rounded overflow-auto">{this.state.error?.message}</pre>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
 
 function App() {
   const [token, setToken] = useState<string | null>(null);
@@ -100,11 +62,9 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ErrorBoundary>
-        <div className="min-h-screen bg-gray-50">
-          <SeminarsModule />
-        </div>
-      </ErrorBoundary>
+      <div className="min-h-screen bg-gray-50">
+        <SeminarsModule />
+      </div>
     </QueryClientProvider>
   );
 }
