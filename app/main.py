@@ -1585,6 +1585,7 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         if s.assigned_seminar_id:
             seminar = db.get(Seminar, s.assigned_seminar_id)
             if seminar:
+                assigned_suggestion_id = None
                 # Access speaker through the relationship
                 try:
                     speaker_name = seminar.speaker.name if seminar.speaker else None
@@ -1595,6 +1596,29 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
                     speaker = db.get(Speaker, seminar.speaker_id)
                     if speaker:
                         slot_data["assigned_speaker_name"] = speaker.name
+
+                # Attach the matched suggestion id to make info-link generation reliable
+                for suggestion in suggestions:
+                    if suggestion.semester_plan_id != plan_id:
+                        continue
+                    if suggestion.status != "confirmed":
+                        continue
+
+                    if seminar.speaker_id and suggestion.speaker_id and seminar.speaker_id == suggestion.speaker_id:
+                        assigned_suggestion_id = suggestion.id
+                        break
+
+                    slot_speaker_name = slot_data.get("assigned_speaker_name")
+                    if (
+                        slot_speaker_name
+                        and suggestion.speaker_name
+                        and suggestion.speaker_name.strip().lower() == slot_speaker_name.strip().lower()
+                    ):
+                        assigned_suggestion_id = suggestion.id
+                        break
+
+                if assigned_suggestion_id:
+                    slot_data["assigned_suggestion_id"] = assigned_suggestion_id
         slots_response.append(slot_data)
     
     return {
@@ -1602,8 +1626,10 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         "suggestions": [
             {
                 "id": s.id,
+                "speaker_id": s.speaker_id,
                 "speaker_name": s.speaker_name,
                 "speaker_affiliation": s.speaker_affiliation,
+                "suggested_by": s.suggested_by,
                 "suggested_topic": s.suggested_topic,
                 "priority": s.priority,
                 "status": s.status,
