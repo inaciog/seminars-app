@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
+COPY static/ ./static/
 COPY backup.sh .
 RUN chmod +x backup.sh
 
