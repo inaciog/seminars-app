@@ -1244,9 +1244,22 @@ async def delete_semester_plan(plan_id: int, db: Session = Depends(get_db), user
     if not plan:
         raise HTTPException(status_code=404, detail="Semester plan not found")
     
+    # Delete all related slots first
+    slots_stmt = select(SeminarSlot).where(SeminarSlot.semester_plan_id == plan_id)
+    slots = db.exec(slots_stmt).all()
+    for slot in slots:
+        db.delete(slot)
+    
+    # Delete all related suggestions
+    suggestions_stmt = select(SpeakerSuggestion).where(SpeakerSuggestion.semester_plan_id == plan_id)
+    suggestions = db.exec(suggestions_stmt).all()
+    for suggestion in suggestions:
+        db.delete(suggestion)
+    
+    # Now delete the plan
     db.delete(plan)
     db.commit()
-    return {"success": True}
+    return {"success": True, "deleted_slots": len(slots), "deleted_suggestions": len(suggestions)}
 
 # ============================================================================
 # API Routes - Seminar Slots
