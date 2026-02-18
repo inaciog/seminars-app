@@ -372,8 +372,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount static files from frontend dist
+app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
 # Auth middleware for HTML routes
 @app.middleware("http")
@@ -386,32 +386,8 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Seminars</title>
-        <link rel="stylesheet" href="/static/style.css">
-    </head>
-    <body>
-        <div class="container">
-            <header>
-                <h1>📚 Seminars</h1>
-                <button onclick="openModal('seminar-modal')">+ New Seminar</button>
-            </header>
-            
-            <nav>
-                <a href="/" class="active">Seminars</a>
-                <a href="/speakers">Speakers</a>
-                <a href="/rooms">Rooms</a>
-                <a href="/public" target="_blank">Public Page ↗</a>
-            </nav>
-            
-            <div class="card">
-                <h2>Upcoming Seminars</h2>
-                <div id="seminars-list">
+    with open("frontend/dist/index.html", "r") as f:
+        return f.read()
                     <p>Loading...</p>
                 </div>
             </div>
