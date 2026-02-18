@@ -665,10 +665,10 @@ async def log_requests(request: Request, call_next):
 FRONTEND_DIST_DIR = Path("frontend/dist")
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 
-if FRONTEND_ASSETS_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR)), name="assets")
-else:
-    logger.warning(f"Frontend assets directory not found: {FRONTEND_ASSETS_DIR}")
+# check_dir=False avoids import-time crashes when frontend artifacts are not bundled yet.
+app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR), check_dir=False), name="assets")
+if not FRONTEND_ASSETS_DIR.exists():
+    logger.warning(f"Frontend assets directory not found at startup: {FRONTEND_ASSETS_DIR}")
 
 
 @app.middleware("http")
@@ -683,9 +683,16 @@ async def auth_middleware(request: Request, call_next):
 async def index():
     index_file = FRONTEND_DIST_DIR / "index.html"
     if not index_file.exists():
-        raise HTTPException(
+        logger.warning(f"Frontend index file not found: {index_file}")
+        return HTMLResponse(
+            content=(
+                "<html><body style='font-family:sans-serif;padding:2rem'>"
+                "<h2>Seminars frontend is not available yet</h2>"
+                "<p>The backend is running, but frontend build artifacts are missing.</p>"
+                "<p>Please run <code>npm --prefix frontend run build</code> and redeploy.</p>"
+                "</body></html>"
+            ),
             status_code=503,
-            detail="Frontend build is not available. Please build the frontend assets.",
         )
 
     with index_file.open("r") as f:
