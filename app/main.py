@@ -1584,8 +1584,17 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         # If slot has an assigned seminar, get the speaker name
         if s.assigned_seminar_id:
             seminar = db.get(Seminar, s.assigned_seminar_id)
-            if seminar and seminar.speaker:
-                slot_data["assigned_speaker_name"] = seminar.speaker.name
+            if seminar:
+                # Access speaker through the relationship
+                try:
+                    speaker_name = seminar.speaker.name if seminar.speaker else None
+                    if speaker_name:
+                        slot_data["assigned_speaker_name"] = speaker_name
+                except Exception:
+                    # If speaker relationship isn't loaded, query it directly
+                    speaker = db.get(Speaker, seminar.speaker_id)
+                    if speaker:
+                        slot_data["assigned_speaker_name"] = speaker.name
         slots_response.append(slot_data)
     
     return {
