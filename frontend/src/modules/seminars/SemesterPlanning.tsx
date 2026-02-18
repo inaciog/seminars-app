@@ -401,9 +401,9 @@ export function SemesterPlanning() {
                           onGenerateInfoLink={() => {
                             // Find the suggestion associated with this slot's assigned speaker
                             if (slot.assigned_seminar_id) {
-                              // Find suggestion by matching speaker name
+                              // Find suggestion by matching speaker name (case-insensitive, trimmed)
                               const suggestion = boardData?.suggestions.find(
-                                s => s.speaker_name === slot.assigned_speaker_name
+                                s => s.speaker_name?.trim().toLowerCase() === slot.assigned_speaker_name?.trim().toLowerCase()
                               );
                               if (suggestion?.id) {
                                 generateInfoLinkMutation.mutate({
@@ -425,7 +425,7 @@ export function SemesterPlanning() {
                             }
                             
                             const suggestion = boardData?.suggestions.find(
-                              s => s.speaker_name === slot.assigned_speaker_name
+                              s => s.speaker_name?.trim().toLowerCase() === slot.assigned_speaker_name?.trim().toLowerCase()
                             );
                             
                             // Auto-generate info link for info_request emails
@@ -452,7 +452,8 @@ export function SemesterPlanning() {
                                 linkError = 'Network error generating link';
                               }
                             } else if (type === 'info_request') {
-                              linkError = `Missing: seminar=${slot.assigned_seminar_id}, suggestion=${suggestion?.id}`;
+                              const availableSpeakers = boardData?.suggestions?.map(s => s.speaker_name).join(', ') || 'none';
+                              linkError = `Speaker "${slot.assigned_speaker_name}" not found in suggestions. Available: ${availableSpeakers}`;
                             }
                             
                             setEmailDraft({
