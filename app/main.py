@@ -1665,6 +1665,33 @@ async def delete_file_v1(
     
     return {"success": True, "message": "File deleted successfully"}
 
+@app.get("/api/v1/seminars/seminars/{seminar_id}/files/{file_id}/download")
+async def download_file_v1(
+    seminar_id: int,
+    file_id: int,
+    access_code: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Download a file (frontend compatibility endpoint)."""
+    file_record = db.get(UploadedFile, file_id)
+    if not file_record or file_record.seminar_id != seminar_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path = Path(settings.uploads_dir) / file_record.storage_filename
+    if not file_path.exists():
+        logger.error(f"File not found on disk: {file_path}")
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    
+    log_audit("FILE_DOWNLOAD", user.get('id'), {"file_id": file_id, "filename": file_record.original_filename})
+    logger.info(f"File downloaded: {file_record.original_filename} by {user.get('id')}")
+    
+    return FileResponse(
+        path=file_path,
+        filename=file_record.original_filename,
+        media_type=file_record.content_type
+    )
+
 # ============================================================================
 # API Routes - External (for Dashboard)
 # ============================================================================
