@@ -3,12 +3,6 @@ Seminars App - Unified Auth Integration
 
 A standalone seminar management system that integrates with the unified
 authentication service (inacio-auth.fly.dev).
-
-Auth Flow:
-1. User visits app with ?token=xxx from auth service
-2. App validates JWT against JWT_SECRET
-3. If invalid/missing, redirect to auth service login
-4. All API calls include the token
 """
 
 import os
@@ -51,7 +45,6 @@ settings = Settings()
 # Database Models
 # ============================================================================
 
-# Engine will be initialized in lifespan after ensuring directories exist
 engine = None
 
 def get_engine():
@@ -69,11 +62,11 @@ class Speaker(SQLModel, table=True):
     email: Optional[str] = None
     website: Optional[str] = None
     bio: Optional[str] = None
+    notes: Optional[str] = None
     cv_path: Optional[str] = None
     photo_path: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
-    # Relationships
     seminars: List["Seminar"] = Relationship(back_populates="speaker")
     availability_slots: List["AvailabilitySlot"] = Relationship(back_populates="speaker")
 
@@ -84,7 +77,7 @@ class Room(SQLModel, table=True):
     name: str = Field(index=True)
     capacity: Optional[int] = None
     location: Optional[str] = None
-    equipment: Optional[str] = None  # JSON string of equipment list
+    equipment: Optional[str] = None
     
     seminars: List["Seminar"] = Relationship(back_populates="room")
 
@@ -94,28 +87,25 @@ class Seminar(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     date: date_type = Field(index=True)
-    start_time: str  # HH:MM format
+    start_time: str
     end_time: Optional[str] = None
     
-    # Foreign keys
     speaker_id: int = Field(foreign_key="speakers.id")
     room_id: Optional[int] = Field(default=None, foreign_key="rooms.id")
     
-    # Details
     abstract: Optional[str] = None
     paper_title: Optional[str] = None
-    status: str = Field(default="planned")  # planned, confirmed, completed, cancelled
+    status: str = Field(default="planned")
     
-    # Bureaucracy tracking
     room_booked: bool = Field(default=False)
     announcement_sent: bool = Field(default=False)
     calendar_invite_sent: bool = Field(default=False)
     website_updated: bool = Field(default=False)
+    catering_ordered: bool = Field(default=False)
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
-    # Relationships
     speaker: Speaker = Relationship(back_populates="seminars")
     room: Optional[Room] = Relationship(back_populates="seminars")
     files: List["UploadedFile"] = Relationship(back_populates="seminar")
@@ -143,13 +133,75 @@ class UploadedFile(SQLModel, table=True):
     original_extension: Optional[str] = None
     content_type: str
     file_size: int
-    storage_filename: str  # UUID.bin
-    file_category: Optional[str] = None  # cv, photo, paper, other
+    storage_filename: str
+    file_category: Optional[str] = None
     description: Optional[str] = None
     
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
     
     seminar: Seminar = Relationship(back_populates="files")
+
+# New models for semester planning
+class SemesterPlan(SQLModel, table=True):
+    __tablename__ = "semester_plans"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    academic_year: str
+    semester: str
+    default_room: str = "TBD"
+    default_start_time: str = "14:00"
+    default_duration_minutes: int = 60
+    status: str = Field(default="draft")  # draft, active, completed, archived
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    slots: List["SeminarSlot"] = Relationship(back_populates="plan")
+
+class SeminarSlot(SQLModel, table=True):
+    __tablename__ = "seminar_slots"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    semester_plan_id: int = Field(foreign_key="semester_plans.id")
+    date: date_type
+    start_time: str
+    end_time: str
+    room: str
+    status: str = Field(default="available")  # available, reserved, confirmed, cancelled
+    assigned_seminar_id: Optional[int] = Field(default=None, foreign_key="seminars.id")
+    
+    plan: SemesterPlan = Relationship(back_populates="slots")
+    assigned_seminar: Optional[Seminar] = Relationship()
+
+class SpeakerSuggestion(SQLModel, table=True):
+    __tablename__ = "speaker_suggestions"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    suggested_by: str
+    suggested_by_email: Optional[str] = None
+    speaker_id: Optional[int] = Field(default=None, foreign_key="speakers.id")
+    speaker_name: str
+    speaker_email: Optional[str] = None
+    speaker_affiliation: Optional[str] = None
+    suggested_topic: Optional[str] = None
+    reason: Optional[str] = None
+    priority: str = Field(default="medium")  # low, medium, high
+    status: str = Field(default="pending")  # pending, contacted, confirmed, declined
+    semester_plan_id: Optional[int] = Field(default=None, foreign_key="semester_plans.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    speaker: Optional[Speaker] = Relationship()
+    availability: List["SpeakerAvailability"] = Relationship(back_populates="suggestion")
+
+class SpeakerAvailability(SQLModel, table=True):
+    __tablename__ = "speaker_availability"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    suggestion_id: int = Field(foreign_key="speaker_suggestions.id")
+    date: date_type
+    preference: str = Field(default="available")  # preferred, available, not_preferred
+    
+    suggestion: SpeakerSuggestion = Relationship(back_populates="availability")
 
 # ============================================================================
 # Pydantic Models
@@ -161,6 +213,7 @@ class SpeakerCreate(BaseModel):
     email: Optional[str] = None
     website: Optional[str] = None
     bio: Optional[str] = None
+    notes: Optional[str] = None
 
 class SpeakerResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -171,6 +224,7 @@ class SpeakerResponse(BaseModel):
     email: Optional[str]
     website: Optional[str]
     bio: Optional[str]
+    notes: Optional[str]
     cv_path: Optional[str]
     photo_path: Optional[str]
 
@@ -213,6 +267,7 @@ class SeminarUpdate(BaseModel):
     announcement_sent: Optional[bool] = None
     calendar_invite_sent: Optional[bool] = None
     website_updated: Optional[bool] = None
+    catering_ordered: Optional[bool] = None
 
 class SeminarResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -231,15 +286,89 @@ class SeminarResponse(BaseModel):
     announcement_sent: bool
     calendar_invite_sent: bool
     website_updated: bool
+    catering_ordered: bool
     speaker: SpeakerResponse
     room: Optional[RoomResponse]
 
-class AvailabilityCreate(BaseModel):
-    speaker_id: int
+# Semester Planning Pydantic Models
+class SemesterPlanCreate(BaseModel):
+    name: str
+    academic_year: str
+    semester: str
+    default_room: str = "TBD"
+    default_start_time: str = "14:00"
+    default_duration_minutes: int = 60
+    notes: Optional[str] = None
+
+class SemesterPlanResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    name: str
+    academic_year: str
+    semester: str
+    default_room: str
+    default_start_time: str
+    default_duration_minutes: int
+    status: str
+    notes: Optional[str]
+    created_at: datetime
+
+class SeminarSlotCreate(BaseModel):
     date: date_type
     start_time: str
     end_time: str
-    notes: Optional[str] = None
+    room: str
+
+class SeminarSlotResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    semester_plan_id: int
+    date: date_type
+    start_time: str
+    end_time: str
+    room: str
+    status: str
+    assigned_seminar_id: Optional[int]
+
+class SpeakerSuggestionCreate(BaseModel):
+    suggested_by: str
+    suggested_by_email: Optional[str] = None
+    speaker_id: Optional[int] = None
+    speaker_name: str
+    speaker_email: Optional[str] = None
+    speaker_affiliation: Optional[str] = None
+    suggested_topic: Optional[str] = None
+    reason: Optional[str] = None
+    priority: str = "medium"
+    semester_plan_id: Optional[int] = None
+
+class SpeakerSuggestionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    suggested_by: str
+    suggested_by_email: Optional[str]
+    speaker_id: Optional[int]
+    speaker_name: str
+    speaker_email: Optional[str]
+    speaker_affiliation: Optional[str]
+    suggested_topic: Optional[str]
+    reason: Optional[str]
+    priority: str
+    status: str
+    semester_plan_id: Optional[int]
+    created_at: datetime
+    availability: List[dict] = []
+
+class SpeakerAvailabilityCreate(BaseModel):
+    date: date_type
+    preference: str = "available"
+
+class AssignSpeakerRequest(BaseModel):
+    suggestion_id: int
+    slot_id: int
 
 # ============================================================================
 # Auth
@@ -265,12 +394,9 @@ async def get_current_user(
     token: Optional[str] = Query(None)
 ) -> dict:
     """Get current user from token (header, query param, or cookie)."""
-    # Try header first
     auth_token = credentials.credentials if credentials else None
-    # Then query param
     if not auth_token:
         auth_token = token
-    # Then cookie
     if not auth_token:
         auth_token = request.cookies.get("token")
     
@@ -299,7 +425,6 @@ async def require_auth(request: Request, call_next):
     token = request.query_params.get("token") or request.cookies.get("token")
     
     if not token or not verify_token(token):
-        # Redirect to auth service
         return_url = f"{settings.app_url}{request.url.path}"
         return RedirectResponse(
             f"{settings.auth_service_url}/login?returnTo={return_url}"
@@ -308,62 +433,18 @@ async def require_auth(request: Request, call_next):
     return await call_next(request)
 
 # ============================================================================
-# File Upload Helpers
-# ============================================================================
-
-def ensure_uploads_dir():
-    Path(settings.uploads_dir).mkdir(parents=True, exist_ok=True)
-
-def save_uploaded_file(file: UploadFile, seminar_id: int, category: Optional[str], db: Session) -> UploadedFile:
-    ensure_uploads_dir()
-    
-    original_filename = file.filename or "unnamed"
-    original_ext = original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
-    
-    # Generate safe filename
-    file_id = uuid.uuid4().hex
-    storage_filename = f"{file_id}.bin"
-    storage_path = Path(settings.uploads_dir) / storage_filename
-    
-    # Save file
-    with open(storage_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    file_size = storage_path.stat().st_size
-    content_type = file.content_type or "application/octet-stream"
-    
-    # Create DB record
-    uploaded = UploadedFile(
-        seminar_id=seminar_id,
-        original_filename=original_filename,
-        original_extension=original_ext if original_ext else None,
-        content_type=content_type,
-        file_size=file_size,
-        storage_filename=storage_filename,
-        file_category=category,
-    )
-    db.add(uploaded)
-    db.commit()
-    db.refresh(uploaded)
-    
-    return uploaded
-
-# ============================================================================
 # App Initialization
 # ============================================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup - ensure directories exist first
     Path("/tmp").mkdir(parents=True, exist_ok=True)
     Path("/tmp/uploads").mkdir(parents=True, exist_ok=True)
     Path("/tmp/backups").mkdir(parents=True, exist_ok=True)
     
-    # Now create engine and tables
     eng = get_engine()
     SQLModel.metadata.create_all(eng)
     yield
-    # Shutdown
 
 app = FastAPI(title="Seminars App", lifespan=lifespan)
 
@@ -374,10 +455,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files from frontend dist
 app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
-# Auth middleware for HTML routes
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     return await require_auth(request, call_next)
@@ -393,7 +472,6 @@ async def index():
 
 @app.get("/public", response_class=HTMLResponse)
 async def public_page(db: Session = Depends(get_db)):
-    """Public page showing upcoming seminars."""
     today = date_type.today()
     statement = select(Seminar).where(Seminar.date >= today).order_by(Seminar.date).limit(10)
     seminars = db.exec(statement).all()
@@ -597,8 +675,331 @@ async def delete_seminar(seminar_id: int, db: Session = Depends(get_db), user: d
     return {"success": True}
 
 # ============================================================================
+# API Routes - Semester Planning
+# ============================================================================
+
+@app.get("/api/v1/seminars/semester-plans", response_model=List[SemesterPlanResponse])
+async def list_semester_plans(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    statement = select(SemesterPlan).order_by(SemesterPlan.created_at.desc())
+    return db.exec(statement).all()
+
+@app.post("/api/v1/seminars/semester-plans", response_model=SemesterPlanResponse)
+async def create_semester_plan(plan: SemesterPlanCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    db_plan = SemesterPlan(**plan.model_dump())
+    db.add(db_plan)
+    db.commit()
+    db.refresh(db_plan)
+    return db_plan
+
+@app.get("/api/v1/seminars/semester-plans/{plan_id}", response_model=SemesterPlanResponse)
+async def get_semester_plan(plan_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    plan = db.get(SemesterPlan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Semester plan not found")
+    return plan
+
+@app.put("/api/v1/seminars/semester-plans/{plan_id}", response_model=SemesterPlanResponse)
+async def update_semester_plan(plan_id: int, update: SemesterPlanCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    plan = db.get(SemesterPlan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Semester plan not found")
+    
+    for key, value in update.model_dump().items():
+        setattr(plan, key, value)
+    
+    db.commit()
+    db.refresh(plan)
+    return plan
+
+@app.delete("/api/v1/seminars/semester-plans/{plan_id}")
+async def delete_semester_plan(plan_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    plan = db.get(SemesterPlan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Semester plan not found")
+    
+    db.delete(plan)
+    db.commit()
+    return {"success": True}
+
+# ============================================================================
+# API Routes - Seminar Slots
+# ============================================================================
+
+@app.get("/api/v1/seminars/semester-plans/{plan_id}/slots", response_model=List[SeminarSlotResponse])
+async def list_slots(plan_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    statement = select(SeminarSlot).where(SeminarSlot.semester_plan_id == plan_id).order_by(SeminarSlot.date)
+    return db.exec(statement).all()
+
+@app.post("/api/v1/seminars/semester-plans/{plan_id}/slots", response_model=SeminarSlotResponse)
+async def create_slot(plan_id: int, slot: SeminarSlotCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    db_slot = SeminarSlot(semester_plan_id=plan_id, **slot.model_dump())
+    db.add(db_slot)
+    db.commit()
+    db.refresh(db_slot)
+    return db_slot
+
+@app.put("/api/v1/seminars/slots/{slot_id}", response_model=SeminarSlotResponse)
+async def update_slot(slot_id: int, update: SeminarSlotCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    slot = db.get(SeminarSlot, slot_id)
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    
+    for key, value in update.model_dump().items():
+        setattr(slot, key, value)
+    
+    db.commit()
+    db.refresh(slot)
+    return slot
+
+@app.delete("/api/v1/seminars/slots/{slot_id}")
+async def delete_slot(slot_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    slot = db.get(SeminarSlot, slot_id)
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    
+    db.delete(slot)
+    db.commit()
+    return {"success": True}
+
+@app.post("/api/v1/seminars/slots/{slot_id}/unassign")
+async def unassign_slot(slot_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    slot = db.get(SeminarSlot, slot_id)
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    
+    slot.assigned_seminar_id = None
+    slot.status = "available"
+    db.commit()
+    return {"success": True}
+
+# ============================================================================
+# API Routes - Speaker Suggestions
+# ============================================================================
+
+@app.get("/api/v1/seminars/speaker-suggestions", response_model=List[SpeakerSuggestionResponse])
+async def list_speaker_suggestions(
+    plan_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    statement = select(SpeakerSuggestion)
+    if plan_id:
+        statement = statement.where(SpeakerSuggestion.semester_plan_id == plan_id)
+    statement = statement.order_by(SpeakerSuggestion.created_at.desc())
+    
+    suggestions = db.exec(statement).all()
+    
+    # Convert to response with availability
+    result = []
+    for s in suggestions:
+        avail = [{"date": a.date.isoformat(), "preference": a.preference} for a in s.availability]
+        result.append({
+            "id": s.id,
+            "suggested_by": s.suggested_by,
+            "suggested_by_email": s.suggested_by_email,
+            "speaker_id": s.speaker_id,
+            "speaker_name": s.speaker_name,
+            "speaker_email": s.speaker_email,
+            "speaker_affiliation": s.speaker_affiliation,
+            "suggested_topic": s.suggested_topic,
+            "reason": s.reason,
+            "priority": s.priority,
+            "status": s.status,
+            "semester_plan_id": s.semester_plan_id,
+            "created_at": s.created_at,
+            "availability": avail
+        })
+    return result
+
+@app.post("/api/v1/seminars/speaker-suggestions", response_model=SpeakerSuggestionResponse)
+async def create_speaker_suggestion(suggestion: SpeakerSuggestionCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    db_suggestion = SpeakerSuggestion(**suggestion.model_dump())
+    db.add(db_suggestion)
+    db.commit()
+    db.refresh(db_suggestion)
+    return {
+        "id": db_suggestion.id,
+        "suggested_by": db_suggestion.suggested_by,
+        "suggested_by_email": db_suggestion.suggested_by_email,
+        "speaker_id": db_suggestion.speaker_id,
+        "speaker_name": db_suggestion.speaker_name,
+        "speaker_email": db_suggestion.speaker_email,
+        "speaker_affiliation": db_suggestion.speaker_affiliation,
+        "suggested_topic": db_suggestion.suggested_topic,
+        "reason": db_suggestion.reason,
+        "priority": db_suggestion.priority,
+        "status": db_suggestion.status,
+        "semester_plan_id": db_suggestion.semester_plan_id,
+        "created_at": db_suggestion.created_at,
+        "availability": []
+    }
+
+@app.post("/api/v1/seminars/speaker-suggestions/{suggestion_id}/availability")
+async def add_speaker_availability(
+    suggestion_id: int,
+    availabilities: List[SpeakerAvailabilityCreate],
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    suggestion = db.get(SpeakerSuggestion, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    
+    for avail in availabilities:
+        db_avail = SpeakerAvailability(suggestion_id=suggestion_id, **avail.model_dump())
+        db.add(db_avail)
+    
+    db.commit()
+    return {"success": True}
+
+@app.put("/api/v1/seminars/speaker-suggestions/{suggestion_id}", response_model=SpeakerSuggestionResponse)
+async def update_speaker_suggestion(suggestion_id: int, update: SpeakerSuggestionCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    suggestion = db.get(SpeakerSuggestion, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    
+    for key, value in update.model_dump().items():
+        setattr(suggestion, key, value)
+    
+    db.commit()
+    db.refresh(suggestion)
+    
+    avail = [{"date": a.date.isoformat(), "preference": a.preference} for a in suggestion.availability]
+    return {
+        "id": suggestion.id,
+        "suggested_by": suggestion.suggested_by,
+        "suggested_by_email": suggestion.suggested_by_email,
+        "speaker_id": suggestion.speaker_id,
+        "speaker_name": suggestion.speaker_name,
+        "speaker_email": suggestion.speaker_email,
+        "speaker_affiliation": suggestion.speaker_affiliation,
+        "suggested_topic": suggestion.suggested_topic,
+        "reason": suggestion.reason,
+        "priority": suggestion.priority,
+        "status": suggestion.status,
+        "semester_plan_id": suggestion.semester_plan_id,
+        "created_at": suggestion.created_at,
+        "availability": avail
+    }
+
+# ============================================================================
+# API Routes - Planning Board
+# ============================================================================
+
+@app.get("/api/v1/seminars/semester-plans/{plan_id}/planning-board")
+async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    plan = db.get(SemesterPlan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Semester plan not found")
+    
+    # Get slots
+    slots_stmt = select(SeminarSlot).where(SeminarSlot.semester_plan_id == plan_id).order_by(SeminarSlot.date)
+    slots = db.exec(slots_stmt).all()
+    
+    # Get suggestions for this plan
+    suggestions_stmt = select(SpeakerSuggestion).where(SpeakerSuggestion.semester_plan_id == plan_id)
+    suggestions = db.exec(suggestions_stmt).all()
+    
+    return {
+        "slots": [
+            {
+                "id": s.id,
+                "date": s.date.isoformat(),
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+                "room": s.room,
+                "status": s.status,
+                "assigned_seminar_id": s.assigned_seminar_id
+            }
+            for s in slots
+        ],
+        "suggestions": [
+            {
+                "id": s.id,
+                "speaker_name": s.speaker_name,
+                "speaker_affiliation": s.speaker_affiliation,
+                "suggested_topic": s.suggested_topic,
+                "priority": s.priority,
+                "status": s.status,
+                "availability": [{"date": a.date.isoformat(), "preference": a.preference} for a in s.availability]
+            }
+            for s in suggestions
+        ]
+    }
+
+@app.post("/api/v1/seminars/planning/assign")
+async def assign_speaker_to_slot(
+    request: AssignSpeakerRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    slot = db.get(SeminarSlot, request.slot_id)
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    
+    suggestion = db.get(SpeakerSuggestion, request.suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    
+    # Create a seminar from the suggestion
+    seminar = Seminar(
+        title=suggestion.suggested_topic or f"Seminar by {suggestion.speaker_name}",
+        date=slot.date,
+        start_time=slot.start_time,
+        end_time=slot.end_time,
+        speaker_id=suggestion.speaker_id or 0,  # Will need to handle this better
+        room_id=None,  # Will need to map room name to room_id
+        status="planned"
+    )
+    db.add(seminar)
+    db.commit()
+    db.refresh(seminar)
+    
+    # Assign seminar to slot
+    slot.assigned_seminar_id = seminar.id
+    slot.status = "confirmed"
+    suggestion.status = "confirmed"
+    
+    db.commit()
+    return {"success": True, "seminar_id": seminar.id}
+
+# ============================================================================
 # API Routes - Files
 # ============================================================================
+
+def ensure_uploads_dir():
+    Path(settings.uploads_dir).mkdir(parents=True, exist_ok=True)
+
+def save_uploaded_file(file: UploadFile, seminar_id: int, category: Optional[str], db: Session) -> UploadedFile:
+    ensure_uploads_dir()
+    
+    original_filename = file.filename or "unnamed"
+    original_ext = original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
+    
+    file_id = uuid.uuid4().hex
+    storage_filename = f"{file_id}.bin"
+    storage_path = Path(settings.uploads_dir) / storage_filename
+    
+    with open(storage_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    file_size = storage_path.stat().st_size
+    content_type = file.content_type or "application/octet-stream"
+    
+    uploaded = UploadedFile(
+        seminar_id=seminar_id,
+        original_filename=original_filename,
+        original_extension=original_ext if original_ext else None,
+        content_type=content_type,
+        file_size=file_size,
+        storage_filename=storage_filename,
+        file_category=category,
+    )
+    db.add(uploaded)
+    db.commit()
+    db.refresh(uploaded)
+    
+    return uploaded
 
 @app.post("/api/seminars/{seminar_id}/files")
 async def upload_file(
@@ -642,21 +1043,17 @@ async def download_file(file_id: int, db: Session = Depends(get_db), user: dict 
 
 @app.get("/api/external/stats")
 async def external_stats(secret: str, db: Session = Depends(get_db)):
-    """Get statistics for dashboard integration."""
     if secret != settings.api_secret:
         raise HTTPException(status_code=401, detail="Invalid secret")
     
     today = date_type.today()
     
-    # Count upcoming seminars
     upcoming_stmt = select(Seminar).where(Seminar.date >= today)
     upcoming_count = len(db.exec(upcoming_stmt).all())
     
-    # Count total speakers
     speakers_stmt = select(Speaker)
     speakers_count = len(db.exec(speakers_stmt).all())
     
-    # Count pending tasks
     pending_stmt = select(Seminar).where(
         (Seminar.date >= today) & 
         ((Seminar.room_booked == False) | 
@@ -673,7 +1070,6 @@ async def external_stats(secret: str, db: Session = Depends(get_db)):
 
 @app.get("/api/external/upcoming")
 async def external_upcoming(secret: str, limit: int = 5, db: Session = Depends(get_db)):
-    """Get upcoming seminars for dashboard."""
     if secret != settings.api_secret:
         raise HTTPException(status_code=401, detail="Invalid secret")
     
