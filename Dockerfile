@@ -1,4 +1,17 @@
 # Dockerfile
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /frontend
+
+# Copy frontend package files
+COPY frontend/package*.json ./
+RUN npm ci
+
+# Copy frontend source and build
+COPY frontend/ ./
+RUN npm run build
+
+# Main application image
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -15,7 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
-COPY frontend/dist/ ./frontend/dist/
+COPY --from=frontend-builder /frontend/dist/ ./frontend/dist/
 COPY backup.sh .
 RUN chmod +x backup.sh
 
