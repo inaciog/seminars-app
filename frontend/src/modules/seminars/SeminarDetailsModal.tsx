@@ -307,7 +307,10 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         method: 'POST',
         body: uploadData,
       });
-      if (!response.ok) throw new Error('Upload failed');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Upload failed: ${errorText}`);
+      }
       
       // Refetch both details and files list
       queryClient.invalidateQueries({ queryKey: ['seminar-details', seminarId] });
