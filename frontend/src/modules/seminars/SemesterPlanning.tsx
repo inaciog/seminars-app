@@ -405,10 +405,12 @@ export function SemesterPlanning() {
                               const suggestion = boardData?.suggestions.find(
                                 s => s.speaker_name === slot.assigned_speaker_name
                               );
-                              generateInfoLinkMutation.mutate({
-                                seminarId: slot.assigned_seminar_id,
-                                suggestionId: suggestion?.id || 0
-                              });
+                              if (suggestion?.id) {
+                                generateInfoLinkMutation.mutate({
+                                  seminarId: slot.assigned_seminar_id,
+                                  suggestionId: suggestion.id
+                                });
+                              }
                             }
                           }}
                           onDraftEmail={async (type) => {
@@ -428,23 +430,29 @@ export function SemesterPlanning() {
                             
                             // Auto-generate info link for info_request emails
                             let infoLink = '';
-                            if (type === 'info_request' && slot.assigned_seminar_id) {
+                            let linkError = '';
+                            if (type === 'info_request' && slot.assigned_seminar_id && suggestion?.id) {
                               try {
                                 const response = await fetchWithAuth('/api/v1/seminars/speaker-tokens/info', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
                                   body: JSON.stringify({ 
                                     seminar_id: slot.assigned_seminar_id, 
-                                    suggestion_id: suggestion?.id || 0 
+                                    suggestion_id: suggestion.id
                                   }),
                                 });
                                 if (response.ok) {
                                   const data = await response.json();
                                   infoLink = `${window.location.origin}${data.link}`;
+                                } else {
+                                  const errorText = await response.text();
+                                  linkError = `Failed: ${response.status} - ${errorText}`;
                                 }
                               } catch (err) {
-                                console.error('Failed to generate info link:', err);
+                                linkError = 'Network error generating link';
                               }
+                            } else if (type === 'info_request') {
+                              linkError = `Missing: seminar=${slot.assigned_seminar_id}, suggestion=${suggestion?.id}`;
                             }
                             
                             setEmailDraft({
@@ -463,6 +471,7 @@ export function SemesterPlanning() {
                               }),
                               suggestedBy: suggestion?.suggested_by,
                               infoLink,
+                              linkError,
                             });
                           }}
                         />
@@ -1427,6 +1436,7 @@ interface EmailDraftData {
   suggestedBy?: string;
   infoLink?: string;
   availabilityLink?: string;
+  linkError?: string;
 }
 
 // Email Drafting Modal
@@ -1630,6 +1640,8 @@ http://www.inaciobo.com`,
                     <Check className="w-4 h-4" />
                     Generated and included in email
                   </span>
+                ) : draft.linkError ? (
+                  <span className="text-red-600">Error: {draft.linkError}</span>
                 ) : (
                   <span className="text-red-600">Failed to generate - please use "Link" button separately</span>
                 )}
@@ -1643,6 +1655,8 @@ http://www.inaciobo.com`,
                     <Check className="w-4 h-4" />
                     Generated and included in email
                   </span>
+                ) : draft.linkError ? (
+                  <span className="text-red-600">Error: {draft.linkError}</span>
                 ) : (
                   <span className="text-red-600">Failed to generate - please use "Link" button separately</span>
                 )}
