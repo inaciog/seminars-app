@@ -1584,8 +1584,8 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         # If slot has an assigned seminar, get the speaker name
         if s.assigned_seminar_id:
             seminar = db.get(Seminar, s.assigned_seminar_id)
-            if seminar:
-                slot_data["assigned_speaker_name"] = seminar.speaker_name
+            if seminar and seminar.speaker:
+                slot_data["assigned_speaker_name"] = seminar.speaker.name
         slots_response.append(slot_data)
     
     return {
