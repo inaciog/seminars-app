@@ -14,7 +14,7 @@ Auth Flow:
 import os
 import uuid
 import shutil
-from datetime import datetime, date, timedelta
+from datetime import datetime, date as date_type, timedelta
 from pathlib import Path
 from typing import Optional, List
 from contextlib import asynccontextmanager
@@ -86,7 +86,7 @@ class Seminar(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
-    date: date = Field(index=True)
+    date: date_type = Field(index=True)
     start_time: str  # HH:MM format
     end_time: Optional[str] = None
     
@@ -118,7 +118,7 @@ class AvailabilitySlot(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     speaker_id: int = Field(foreign_key="speakers.id")
-    date: date
+    date: date_type
     start_time: str
     end_time: str
     is_available: bool = Field(default=True)
@@ -184,7 +184,7 @@ class RoomResponse(BaseModel):
 
 class SeminarCreate(BaseModel):
     title: str
-    date: date
+    date: date_type
     start_time: str
     end_time: Optional[str] = None
     speaker_id: int
@@ -194,7 +194,7 @@ class SeminarCreate(BaseModel):
 
 class SeminarUpdate(BaseModel):
     title: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[date_type] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     speaker_id: Optional[int] = None
@@ -212,7 +212,7 @@ class SeminarResponse(BaseModel):
     
     id: int
     title: str
-    date: date
+    date: date_type
     start_time: str
     end_time: Optional[str]
     speaker_id: int
@@ -229,7 +229,7 @@ class SeminarResponse(BaseModel):
 
 class AvailabilityCreate(BaseModel):
     speaker_id: int
-    date: date
+    date: date_type
     start_time: str
     end_time: str
     notes: Optional[str] = None
@@ -507,7 +507,7 @@ async def index():
 @app.get("/public", response_class=HTMLResponse)
 async def public_page(db: Session = Depends(get_db)):
     """Public page showing upcoming seminars."""
-    today = date.today()
+    today = date_type.today()
     statement = select(Seminar).where(Seminar.date >= today).order_by(Seminar.date).limit(10)
     seminars = db.exec(statement).all()
     
@@ -664,7 +664,7 @@ async def list_seminars(
     statement = select(Seminar).order_by(Seminar.date)
     
     if upcoming:
-        today = date.today()
+        today = date_type.today()
         statement = statement.where(Seminar.date >= today)
     
     return db.exec(statement).all()
@@ -759,7 +759,7 @@ async def external_stats(secret: str, db: Session = Depends(get_db)):
     if secret != settings.api_secret:
         raise HTTPException(status_code=401, detail="Invalid secret")
     
-    today = date.today()
+    today = date_type.today()
     
     # Count upcoming seminars
     upcoming_stmt = select(Seminar).where(Seminar.date >= today)
@@ -790,7 +790,7 @@ async def external_upcoming(secret: str, limit: int = 5, db: Session = Depends(g
     if secret != settings.api_secret:
         raise HTTPException(status_code=401, detail="Invalid secret")
     
-    today = date.today()
+    today = date_type.today()
     statement = (
         select(Seminar)
         .where(Seminar.date >= today)
