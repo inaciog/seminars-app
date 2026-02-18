@@ -5,79 +5,79 @@ UM-Branded HTML Templates for Public Pages
 def get_um_styles():
     return """
     <style>
-        :root {{
+        :root {
             --um-blue: #003366;
             --um-gold: #FFD700;
             --um-light-blue: #0066CC;
-        }}
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             min-height: 100vh;
             padding: 20px;
-        }}
-        .um-header {{
+        }
+        .um-header {
             background: var(--um-blue);
             color: white;
             padding: 20px;
             text-align: center;
             margin: -20px -20px 30px -20px;
-        }}
-        .um-header h1 {{ font-size: 24px; margin: 0; }}
-        .um-header .subtitle {{ font-size: 14px; opacity: 0.9; margin-top: 5px; }}
-        .container {{
+        }
+        .um-header h1 { font-size: 24px; margin: 0; }
+        .um-header .subtitle { font-size: 14px; opacity: 0.9; margin-top: 5px; }
+        .container {
             max-width: 900px;
             margin: 0 auto;
             background: white;
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.1);
             overflow: hidden;
-        }}
-        .content {{ padding: 40px; }}
-        .welcome {{
+        }
+        .content { padding: 40px; }
+        .welcome {
             background: linear-gradient(135deg, var(--um-blue) 0%, var(--um-light-blue) 100%);
             color: white;
             padding: 30px;
             margin: -40px -40px 30px -40px;
-        }}
-        .welcome h2 {{ font-size: 28px; margin-bottom: 10px; }}
-        .info-card {{
+        }
+        .welcome h2 { font-size: 28px; margin-bottom: 10px; }
+        .info-card {
             background: #f8f9fa;
             border-left: 4px solid var(--um-gold);
             padding: 20px;
             margin-bottom: 30px;
             border-radius: 0 8px 8px 0;
-        }}
-        .info-card h3 {{ color: var(--um-blue); margin-bottom: 15px; font-size: 18px; }}
-        .info-row {{ display: flex; margin-bottom: 10px; }}
-        .info-label {{ font-weight: 600; color: var(--um-blue); width: 150px; flex-shrink: 0; }}
-        .form-section {{ margin-bottom: 30px; }}
-        .form-section h3 {{
+        }
+        .info-card h3 { color: var(--um-blue); margin-bottom: 15px; font-size: 18px; }
+        .info-row { display: flex; margin-bottom: 10px; }
+        .info-label { font-weight: 600; color: var(--um-blue); width: 150px; flex-shrink: 0; }
+        .form-section { margin-bottom: 30px; }
+        .form-section h3 {
             color: var(--um-blue);
             font-size: 20px;
             margin-bottom: 20px;
             padding-bottom: 10px;
             border-bottom: 2px solid var(--um-gold);
-        }}
-        .form-group {{ margin-bottom: 20px; }}
-        label {{ display: block; margin-bottom: 8px; font-weight: 500; color: var(--um-blue); }}
-        input, textarea, select {{
+        }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: var(--um-blue); }
+        input, textarea, select {
             width: 100%;
             padding: 12px 16px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             font-size: 16px;
-        }}
-        input:focus, textarea:focus, select:focus {{
+        }
+        input:focus, textarea:focus, select:focus {
             outline: none;
             border-color: var(--um-light-blue);
             box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
-        }}
-        .form-row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
-        @media (max-width: 600px) {{ .form-row {{ grid-template-columns: 1fr; }} }}
-        .checkbox-group {{ display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }}
-        .btn-submit {{
+        }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+        .checkbox-group { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+        .btn-submit {
             background: linear-gradient(135deg, var(--um-blue) 0%, var(--um-light-blue) 100%);
             color: white;
             border: none;
@@ -88,61 +88,61 @@ def get_um_styles():
             cursor: pointer;
             display: block;
             margin: 40px auto 0;
-        }}
-        .btn-submit:hover {{ transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,51,102,0.3); }}
-        .btn-submit:disabled {{ background: #ccc; cursor: not-allowed; transform: none; }}
-        .message {{
+        }
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,51,102,0.3); }
+        .btn-submit:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        .message {
             margin-top: 20px;
             padding: 15px 20px;
             border-radius: 8px;
             text-align: center;
             display: none;
-        }}
-        .message.success {{ background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
-        .message.error {{ background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
-        .um-footer {{
+        }
+        .message.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .message.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .um-footer {
             text-align: center;
             padding: 20px;
             background: #f5f5f5;
             color: #666;
             font-size: 14px;
             margin: 40px -40px -40px -40px;
-        }}
+        }
         
         /* Calendar Styles */
-        .calendar-container {{
+        .calendar-container {
             background: #f8f9fa;
             border-radius: 12px;
             padding: 20px;
             margin-bottom: 20px;
-        }}
-        .calendar-header {{
+        }
+        .calendar-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
-        }}
-        .calendar-header button {{
+        }
+        .calendar-header button {
             background: var(--um-blue);
             color: white;
             border: none;
             padding: 8px 16px;
             border-radius: 6px;
             cursor: pointer;
-        }}
-        .calendar-grid {{
+        }
+        .calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
             gap: 5px;
-        }}
-        .calendar-day-header {{
+        }
+        .calendar-day-header {
             text-align: center;
             font-weight: 600;
             color: var(--um-blue);
             padding: 10px;
             font-size: 14px;
-        }}
-        .calendar-day {{
+        }
+        .calendar-day {
             aspect-ratio: 1;
             display: flex;
             align-items: center;
@@ -153,39 +153,39 @@ def get_um_styles():
             transition: all 0.2s;
             background: white;
             border: 2px solid transparent;
-        }}
-        .calendar-day:hover:not(.disabled) {{
+        }
+        .calendar-day:hover:not(.disabled) {
             background: #e3f2fd;
             border-color: var(--um-light-blue);
-        }}
-        .calendar-day.selected {{
+        }
+        .calendar-day.selected {
             background: var(--um-blue);
             color: white;
-        }}
-        .calendar-day.in-range {{
+        }
+        .calendar-day.in-range {
             background: #90caf9;
             color: white;
-        }}
-        .calendar-day.disabled {{
+        }
+        .calendar-day.disabled {
             color: #ccc;
             cursor: not-allowed;
             background: #f5f5f5;
-        }}
-        .calendar-day.other-month {{
+        }
+        .calendar-day.other-month {
             color: #999;
-        }}
-        .selected-dates {{
+        }
+        .selected-dates {
             background: #e8f5e9;
             border: 1px solid #4caf50;
             border-radius: 8px;
             padding: 15px;
             margin-top: 15px;
-        }}
-        .selected-dates h4 {{
+        }
+        .selected-dates h4 {
             color: #2e7d32;
             margin-bottom: 10px;
-        }}
-        .date-chip {{
+        }
+        .date-chip {
             display: inline-block;
             background: var(--um-blue);
             color: white;
@@ -193,15 +193,15 @@ def get_um_styles():
             border-radius: 20px;
             margin: 3px;
             font-size: 13px;
-        }}
-        .date-chip .remove {{
+        }
+        .date-chip .remove {
             margin-left: 8px;
             cursor: pointer;
             font-weight: bold;
-        }}
+        }
         
         /* File upload styles */
-        .file-upload-area {{
+        .file-upload-area {
             border: 2px dashed #ccc;
             border-radius: 8px;
             padding: 30px;
@@ -209,19 +209,19 @@ def get_um_styles():
             background: #fafafa;
             transition: all 0.3s;
             cursor: pointer;
-        }}
-        .file-upload-area:hover {{
+        }
+        .file-upload-area:hover {
             border-color: var(--um-light-blue);
             background: #f0f7ff;
-        }}
-        .file-upload-area.dragover {{
+        }
+        .file-upload-area.dragover {
             border-color: var(--um-blue);
             background: #e3f2fd;
-        }}
-        .uploaded-files {{
+        }
+        .uploaded-files {
             margin-top: 15px;
-        }}
-        .file-item {{
+        }
+        .file-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -229,25 +229,25 @@ def get_um_styles():
             padding: 10px 15px;
             border-radius: 6px;
             margin-bottom: 8px;
-        }}
-        .file-item .file-name {{
+        }
+        .file-item .file-name {
             flex: 1;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-        }}
-        .file-item .file-status {{
+        }
+        .file-item .file-status {
             margin-left: 10px;
             font-size: 12px;
             color: #666;
-        }}
-        .file-item .remove-file {{
+        }
+        .file-item .remove-file {
             margin-left: 10px;
             color: #d32f2f;
             cursor: pointer;
             font-weight: bold;
-        }}
-        .save-indicator {{
+        }
+        .save-indicator {
             position: fixed;
             top: 20px;
             right: 20px;
@@ -258,8 +258,8 @@ def get_um_styles():
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             display: none;
             z-index: 1000;
-        }}
-        .btn-secondary {{
+        }
+        .btn-secondary {
             background: #757575;
             color: white;
             border: none;
@@ -268,16 +268,16 @@ def get_um_styles():
             font-size: 14px;
             cursor: pointer;
             margin-right: 10px;
-        }}
-        .btn-secondary:hover {{
+        }
+        .btn-secondary:hover {
             background: #616161;
-        }}
-        .button-group {{
+        }
+        .button-group {
             display: flex;
             justify-content: center;
             gap: 15px;
             margin-top: 30px;
-        }}
+        }
     </style>
     """
 
@@ -385,7 +385,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
                           'July', 'August', 'September', 'October', 'November', 'December'];
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         
-        function renderCalendar() {{
+        function renderCalendar() {
             const grid = document.getElementById('calendarGrid');
             const monthHeader = document.getElementById('currentMonth');
             
@@ -395,12 +395,12 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             grid.innerHTML = '';
             
             // Add day headers
-            dayNames.forEach(day => {{
+            dayNames.forEach(day => {
                 const header = document.createElement('div');
                 header.className = 'calendar-day-header';
                 header.textContent = day;
                 grid.appendChild(header);
-            }});
+            });
             
             // Get first day of month and number of days
             const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
@@ -408,143 +408,143 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             const prevLastDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0);
             
             // Previous month days
-            for (let i = firstDay.getDay() - 1; i >= 0; i--) {{
+            for (let i = firstDay.getDay() - 1; i >= 0; i--) {
                 const day = prevLastDay.getDate() - i;
                 const dayEl = createDayElement(day, true);
                 grid.appendChild(dayEl);
-            }}
+            }
             
             // Current month days
-            for (let day = 1; day <= lastDay.getDate(); day++) {{
+            for (let day = 1; day <= lastDay.getDate(); day++) {
                 const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
                 const dayEl = createDayElement(day, false, date);
                 grid.appendChild(dayEl);
-            }}
+            }
             
             // Next month days
             const remainingCells = 42 - (firstDay.getDay() + lastDay.getDate());
-            for (let day = 1; day <= remainingCells; day++) {{
+            for (let day = 1; day <= remainingCells; day++) {
                 const dayEl = createDayElement(day, true);
                 grid.appendChild(dayEl);
-            }}
-        }}
+            }
+        }
         
-        function createDayElement(day, isOtherMonth, date) {{
+        function createDayElement(day, isOtherMonth, date) {
             const el = document.createElement('div');
             el.className = 'calendar-day';
             el.textContent = day;
             
-            if (isOtherMonth) {{
+            if (isOtherMonth) {
                 el.classList.add('other-month');
-            }} else if (date) {{
+            } else if (date) {
                 const dateStr = formatDate(date);
                 
                 // Check if within semester
-                if (date < semesterStart || date > semesterEnd) {{
+                if (date < semesterStart || date > semesterEnd) {
                     el.classList.add('disabled');
-                }} else {{
-                    if (selectedDates.has(dateStr)) {{
+                } else {
+                    if (selectedDates.has(dateStr)) {
                         el.classList.add('selected');
-                    }}
+                    }
                     
                     el.addEventListener('mousedown', () => startDrag(dateStr));
                     el.addEventListener('mouseenter', () => dragOver(dateStr));
                     el.addEventListener('mouseup', () => endDrag());
-                }}
-            }}
+                }
+            }
             
             return el;
-        }}
+        }
         
-        function formatDate(date) {{
+        function formatDate(date) {
             return date.toISOString().split('T')[0];
-        }}
+        }
         
-        function startDrag(dateStr) {{
+        function startDrag(dateStr) {
             isDragging = true;
             dragStart = dateStr;
             toggleDate(dateStr);
-        }}
+        }
         
-        function dragOver(dateStr) {{
+        function dragOver(dateStr) {
             if (!isDragging || !dragStart) return;
             
             // Select range
             const start = new Date(Math.min(new Date(dragStart), new Date(dateStr)));
             const end = new Date(Math.max(new Date(dragStart), new Date(dateStr)));
             
-            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {{
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
                 const dateStr = formatDate(d);
-                if (d >= semesterStart && d <= semesterEnd) {{
+                if (d >= semesterStart && d <= semesterEnd) {
                     selectedDates.add(dateStr);
-                }}
-            }}
+                }
+            }
             
             renderCalendar();
             updateSelectedDates();
-        }}
+        }
         
-        function endDrag() {{
+        function endDrag() {
             isDragging = false;
             dragStart = null;
-        }}
+        }
         
-        function toggleDate(dateStr) {{
-            if (selectedDates.has(dateStr)) {{
+        function toggleDate(dateStr) {
+            if (selectedDates.has(dateStr)) {
                 selectedDates.delete(dateStr);
-            }} else {{
+            } else {
                 selectedDates.add(dateStr);
-            }}
+            }
             renderCalendar();
             updateSelectedDates();
-        }}
+        }
         
-        function updateSelectedDates() {{
+        function updateSelectedDates() {
             const container = document.getElementById('selectedDatesContainer');
             const list = document.getElementById('selectedDatesList');
             const input = document.getElementById('selectedDatesInput');
             
             const sortedDates = Array.from(selectedDates).sort();
             
-            if (sortedDates.length === 0) {{
+            if (sortedDates.length === 0) {
                 container.style.display = 'none';
                 input.value = '';
                 return;
-            }}
+            }
             
             container.style.display = 'block';
             input.value = sortedDates.join(',');
             
-            list.innerHTML = sortedDates.map(date => {{
+            list.innerHTML = sortedDates.map(date => {
                 const d = new Date(date);
-                const formatted = d.toLocaleDateString('en-US', {{ 
+                const formatted = d.toLocaleDateString('en-US', { 
                     weekday: 'short', 
                     month: 'short', 
                     day: 'numeric' 
-                }});
+                });
                 return '<span class="date-chip">' + formatted + '<span class="remove" onclick="removeDate(\'' + date + '\')">×</span></span>';
-            }}).join('');
-        }}
+            }).join('');
+        }
         
-        function removeDate(dateStr) {{
+        function removeDate(dateStr) {
             selectedDates.delete(dateStr);
             renderCalendar();
             updateSelectedDates();
-        }}
+        }
         
         // Navigation
-        document.getElementById('prevMonth').addEventListener('click', () => {{
+        document.getElementById('prevMonth').addEventListener('click', () => {
             currentDate.setMonth(currentDate.getMonth() - 1);
             renderCalendar();
-        }});
+        });
         
-        document.getElementById('nextMonth').addEventListener('click', () => {{
+        document.getElementById('nextMonth').addEventListener('click', () => {
             currentDate.setMonth(currentDate.getMonth() + 1);
             renderCalendar();
-        }});
+        });
         
         // Form submission
-        document.getElementById('availabilityForm').addEventListener('submit', async (e) => {{
+        document.getElementById('availabilityForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const btn = document.querySelector('.btn-submit');
@@ -553,7 +553,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             
             const sortedDates = Array.from(selectedDates).sort();
             
-            if (sortedDates.length === 0) {{
+            if (sortedDates.length === 0) {
                 const msg = document.getElementById('message');
                 msg.style.display = 'block';
                 msg.className = 'message error';
@@ -561,52 +561,52 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
                 btn.disabled = false;
                 btn.textContent = 'Submit Availability';
                 return;
-            }}
+            }
             
             // Convert to availabilities
-            const availabilities = sortedDates.map(date => ({{
+            const availabilities = sortedDates.map(date => ({
                 start_date: date,
                 end_date: date,
                 preference: 'available'
-            }}));
+            }));
             
-            try {{
-                const response = await fetch('/api/v1/seminars/speaker-tokens/{token}/submit-availability', {{
+            try {
+                const response = await fetch('/api/v1/seminars/speaker-tokens/{token}/submit-availability', {
                     method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
                         availabilities: availabilities,
                         earliest_time: document.getElementById('earliestTime').value,
                         latest_time: document.getElementById('latestTime').value,
                         general_notes: document.getElementById('notes').value
-                    }})
-                }});
+                    })
+                });
                 
                 const msg = document.getElementById('message');
                 msg.style.display = 'block';
                 
-                if (response.ok) {{
+                if (response.ok) {
                     msg.className = 'message success';
                     msg.innerHTML = '<strong>✅ Thank you!</strong><br>Your availability has been submitted successfully. We will contact you soon to confirm the date.';
                     document.getElementById('availabilityForm').reset();
                     selectedDates.clear();
                     renderCalendar();
                     updateSelectedDates();
-                }} else {{
+                } else {
                     const error = await response.text();
                     msg.className = 'message error';
                     msg.innerHTML = '<strong>❌ Error</strong><br>' + error;
-                }}
-            }} catch (err) {{
+                }
+            } catch (err) {
                 const msg = document.getElementById('message');
                 msg.style.display = 'block';
                 msg.className = 'message error';
                 msg.innerHTML = '<strong>❌ Network Error</strong><br>Please check your connection and try again.';
-            }} finally {{
+            } finally {
                 btn.disabled = false;
                 btn.textContent = 'Submit Availability';
-            }}
-        }});
+            }
+        });
         
         // Initialize calendar
         renderCalendar();
@@ -831,95 +831,95 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
     
     <script>
         // File upload handling
-        const uploadedFiles = {{}};
+        const uploadedFiles = {};
         
-        function setupFileUpload(inputId, containerId, category) {{
+        function setupFileUpload(inputId, containerId, category) {
             const input = document.getElementById(inputId);
             const container = document.getElementById(containerId);
             const uploadArea = input.parentElement;
             
-            uploadArea.addEventListener('dragover', (e) => {{
+            uploadArea.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 uploadArea.classList.add('dragover');
-            }});
+            });
             
-            uploadArea.addEventListener('dragleave', () => {{
+            uploadArea.addEventListener('dragleave', () => {
                 uploadArea.classList.remove('dragover');
-            }});
+            });
             
-            uploadArea.addEventListener('drop', (e) => {{
+            uploadArea.addEventListener('drop', (e) => {
                 e.preventDefault();
                 uploadArea.classList.remove('dragover');
                 handleFiles(e.dataTransfer.files, container, category);
-            }});
+            });
             
-            input.addEventListener('change', (e) => {{
+            input.addEventListener('change', (e) => {
                 handleFiles(e.target.files, container, category);
-            }});
-        }}
+            });
+        }
         
-        function handleFiles(files, container, category) {{
-            for (const file of files) {{
+        function handleFiles(files, container, category) {
+            for (const file of files) {
                 const fileId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                uploadedFiles[fileId] = {{ file: file, category: category, uploaded: false }};
+                uploadedFiles[fileId] = { file: file, category: category, uploaded: false };
                 
                 const fileEl = document.createElement('div');
                 fileEl.className = 'file-item';
                 fileEl.id = 'file_' + fileId;
                 fileEl.innerHTML = '<span class="file-name">' + file.name + '</span><span class="file-status">Ready to upload</span><span class="remove-file" onclick="removeFile(\'' + fileId + '\')">×</span>';
                 container.appendChild(fileEl);
-            }}
-        }}
+            }
+        }
         
-        function removeFile(fileId) {{
+        function removeFile(fileId) {
             delete uploadedFiles[fileId];
             const el = document.getElementById('file_' + fileId);
             if (el) el.remove();
-        }}
+        }
         
-        async function uploadFiles() {{
+        async function uploadFiles() {
             const fileIds = Object.keys(uploadedFiles).filter(id => !uploadedFiles[id].uploaded);
             
-            for (const fileId of fileIds) {{
+            for (const fileId of fileIds) {
                 const fileData = uploadedFiles[fileId];
                 const formData = new FormData();
                 formData.append('file', fileData.file);
                 formData.append('category', fileData.category);
                 
-                try {{
-                    const response = await fetch('/api/v1/seminars/seminars/{seminar_id or 0}/upload', {{
+                try {
+                    const response = await fetch('/api/v1/seminars/seminars/{seminar_id or 0}/upload', {
                         method: 'POST',
                         body: formData
-                    }});
+                    });
                     
-                    if (response.ok) {{
+                    if (response.ok) {
                         uploadedFiles[fileId].uploaded = true;
                         const el = document.getElementById('file_' + fileId);
-                        if (el) {{
+                        if (el) {
                             el.querySelector('.file-status').textContent = '✓ Uploaded';
                             el.querySelector('.file-status').style.color = '#4caf50';
-                        }}
-                    }}
-                }} catch (err) {{
+                        }
+                    }
+                } catch (err) {
                     console.error('Upload failed:', err);
-                }}
-            }}
-        }}
+                }
+            }
+        }
         
         setupFileUpload('cvFile', 'cvFiles', 'cv');
         setupFileUpload('photoFile', 'photoFiles', 'photo');
         setupFileUpload('passportFile', 'passportFiles', 'passport');
         
-        document.getElementById('needsAccommodation').addEventListener('change', (e) => {{
+        document.getElementById('needsAccommodation').addEventListener('change', (e) => {
             const datesDiv = document.getElementById('accommodationDates');
             datesDiv.style.opacity = e.target.checked ? '1' : '0.5';
-            datesDiv.querySelectorAll('input').forEach(input => {{
+            datesDiv.querySelectorAll('input').forEach(input => {
                 input.disabled = !e.target.checked;
-            }});
-        }});
+            });
+        });
         
-        function saveDraft() {{
-            const formData = {{
+        function saveDraft() {
+            const formData = {
                 passport_number: document.getElementById('passportNumber').value,
                 passport_country: document.getElementById('passportCountry').value,
                 departure_city: document.getElementById('departureCity').value,
@@ -939,22 +939,22 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                 needs_projector: document.getElementById('needsProjector').checked,
                 needs_microphone: document.getElementById('needsMicrophone').checked,
                 special_requirements: document.getElementById('specialRequirements').value
-            }};
+            };
             
             localStorage.setItem('speaker_info_draft_{token}', JSON.stringify(formData));
             
             const indicator = document.getElementById('saveIndicator');
             indicator.style.display = 'block';
-            setTimeout(() => {{
+            setTimeout(() => {
                 indicator.style.display = 'none';
-            }}, 2000);
-        }}
+            }, 2000);
+        }
         
-        function loadDraft() {{
+        function loadDraft() {
             const draft = localStorage.getItem('speaker_info_draft_{token}');
             if (!draft) return;
             
-            try {{
+            try {
                 const data = JSON.parse(draft);
                 document.getElementById('passportNumber').value = data.passport_number || '';
                 document.getElementById('passportCountry').value = data.passport_country || '';
@@ -977,15 +977,15 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                 document.getElementById('specialRequirements').value = data.special_requirements || '';
                 
                 document.getElementById('needsAccommodation').dispatchEvent(new Event('change'));
-            }} catch (e) {{
+            } catch (e) {
                 console.error('Failed to load draft:', e);
-            }}
-        }}
+            }
+        }
         
         setInterval(saveDraft, 30000);
         loadDraft();
         
-        document.getElementById('infoForm').addEventListener('submit', async (e) => {{
+        document.getElementById('infoForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const btn = document.querySelector('.btn-submit');
@@ -994,7 +994,7 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
             
             await uploadFiles();
             
-            const data = {{
+            const data = {
                 passport_number: document.getElementById('passportNumber').value,
                 passport_country: document.getElementById('passportCountry').value,
                 departure_city: document.getElementById('departureCity').value,
@@ -1014,37 +1014,37 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                 needs_projector: document.getElementById('needsProjector').checked,
                 needs_microphone: document.getElementById('needsMicrophone').checked,
                 special_requirements: document.getElementById('specialRequirements').value
-            }};
+            };
             
-            try {{
-                const response = await fetch('/api/v1/seminars/speaker-tokens/{token}/submit-info', {{
+            try {
+                const response = await fetch('/api/v1/seminars/speaker-tokens/{token}/submit-info', {
                     method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(data)
-                }});
+                });
                 
                 const msg = document.getElementById('message');
                 msg.style.display = 'block';
                 
-                if (response.ok) {{
+                if (response.ok) {
                     msg.className = 'message success';
                     msg.innerHTML = '<strong>✅ Thank you!</strong><br>Your information has been submitted successfully.';
                     localStorage.removeItem('speaker_info_draft_{token}');
-                }} else {{
+                } else {
                     const error = await response.text();
                     msg.className = 'message error';
                     msg.innerHTML = '<strong>❌ Error</strong><br>' + error;
-                }}
-            }} catch (err) {{
+                }
+            } catch (err) {
                 const msg = document.getElementById('message');
                 msg.style.display = 'block';
                 msg.className = 'message error';
                 msg.innerHTML = '<strong>❌ Network Error</strong><br>Please check your connection and try again.';
-            }} finally {{
+            } finally {
                 btn.disabled = false;
                 btn.textContent = 'Submit Information';
-            }}
-        }});
+            }
+        });
     </script>
 </body>
 </html>"""
@@ -1057,10 +1057,10 @@ def get_invalid_token_html():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Invalid Link - University of Macau</title>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; text-align: center; padding: 50px; }}
-        .container {{ max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }}
-        h1 {{ color: #003366; font-size: 48px; margin-bottom: 20px; }}
-        p {{ font-size: 18px; color: #666; }}
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; text-align: center; padding: 50px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        h1 { color: #003366; font-size: 48px; margin-bottom: 20px; }
+        p { font-size: 18px; color: #666; }
     </style>
 </head>
 <body>
