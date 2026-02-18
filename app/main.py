@@ -203,6 +203,21 @@ class SpeakerAvailability(SQLModel, table=True):
     
     suggestion: SpeakerSuggestion = Relationship(back_populates="availability")
 
+class SpeakerToken(SQLModel, table=True):
+    __tablename__ = "speaker_tokens"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    token: str = Field(index=True, unique=True)
+    suggestion_id: int = Field(foreign_key="speaker_suggestions.id")
+    token_type: str  # 'availability' or 'info'
+    seminar_id: Optional[int] = Field(default=None, foreign_key="seminars.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+    
+    suggestion: SpeakerSuggestion = Relationship()
+    seminar: Optional[Seminar] = Relationship()
+
 # ============================================================================
 # Pydantic Models
 # ============================================================================
@@ -369,6 +384,29 @@ class SpeakerAvailabilityCreate(BaseModel):
 class AssignSpeakerRequest(BaseModel):
     suggestion_id: int
     slot_id: int
+
+class SpeakerTokenCreate(BaseModel):
+    suggestion_id: int
+    token_type: str  # 'availability' or 'info'
+    seminar_id: Optional[int] = None
+
+class SpeakerTokenResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    token: str
+    suggestion_id: int
+    token_type: str
+    seminar_id: Optional[int]
+    created_at: datetime
+    expires_at: datetime
+    link: str
+
+class SpeakerTokenVerifyRequest(BaseModel):
+    token: str
+
+class SpeakerAvailabilitySubmit(BaseModel):
+    availabilities: List[SpeakerAvailabilityCreate]
 
 # ============================================================================
 # Auth
@@ -973,6 +1011,149 @@ async def update_speaker_suggestion(suggestion_id: int, update: SpeakerSuggestio
         "created_at": suggestion.created_at,
         "availability": avail
     }
+
+# ============================================================================
+# API Routes - Speaker Tokens (for speaker access links)
+# ============================================================================
+
+import secrets
+import string
+
+def generate_token(length: int = 32) -> str:
+    """Generate a secure random token."""
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+@app.post("/api/v1/seminars/speaker-tokens/availability")
+async def create_availability_token(
+    request: dict,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Create a token for speaker to submit availability."""
+    suggestion_id = request.get('suggestion_id')
+    if not suggestion_id:
+        raise HTTPException(status_code=400, detail="suggestion_id is required")
+    
+    suggestion = db.get(SpeakerSuggestion, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    
+    # Create token
+    token = generate_token()
+    expires_at = datetime.utcnow() + timedelta(days=30)
+    
+    db_token = SpeakerToken(
+        token=token,
+        suggestion_id=suggestion_id,
+        token_type='availability',
+        expires_at=expires_at
+    )
+    db.add(db_token)
+    db.commit()
+    
+    return {"link": f"/speaker/availability/{token}", "token": token}
+
+@app.post("/api/v1/seminars/speaker-tokens/info")
+async def create_info_token(
+    request: dict,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Create a token for speaker to submit information."""
+    suggestion_id = request.get('suggestion_id')
+    seminar_id = request.get('seminar_id')
+    
+    if not suggestion_id:
+        raise HTTPException(status_code=400, detail="suggestion_id is required")
+    
+    suggestion = db.get(SpeakerSuggestion, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    
+    # Create token
+    token = generate_token()
+    expires_at = datetime.utcnow() + timedelta(days=30)
+    
+    db_token = SpeakerToken(
+        token=token,
+        suggestion_id=suggestion_id,
+        seminar_id=seminar_id,
+        token_type='info',
+        expires_at=expires_at
+    )
+    db.add(db_token)
+    db.commit()
+    
+    return {"link": f"/speaker/info/{token}", "token": token}
+
+@app.get("/api/v1/seminars/speaker-tokens/verify")
+async def verify_speaker_token(
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """Verify a speaker token and return associated data."""
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.expires_at > datetime.utcnow(),
+        SpeakerToken.used_at.is_(None)
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    suggestion = db_token.suggestion
+    
+    return {
+        "valid": True,
+        "token_type": db_token.token_type,
+        "suggestion": {
+            "id": suggestion.id,
+            "speaker_name": suggestion.speaker_name,
+            "speaker_email": suggestion.speaker_email,
+            "speaker_affiliation": suggestion.speaker_affiliation,
+            "suggested_topic": suggestion.suggested_topic,
+        },
+        "seminar": {
+            "id": db_token.seminar.id,
+            "title": db_token.seminar.title,
+            "date": db_token.seminar.date.isoformat(),
+            "start_time": db_token.seminar.start_time,
+            "end_time": db_token.seminar.end_time,
+        } if db_token.seminar else None
+    }
+
+@app.post("/api/v1/seminars/speaker-tokens/{token}/submit-availability")
+async def submit_speaker_availability(
+    token: str,
+    data: SpeakerAvailabilitySubmit,
+    db: Session = Depends(get_db)
+):
+    """Submit availability using a speaker token."""
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'availability',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    # Add availability entries
+    for avail in data.availabilities:
+        db_avail = SpeakerAvailability(
+            suggestion_id=db_token.suggestion_id,
+            date=avail.date,
+            preference=avail.preference
+        )
+        db.add(db_avail)
+    
+    db_token.used_at = datetime.utcnow()
+    db.commit()
+    
+    return {"success": True, "message": "Availability submitted successfully"}
 
 # ============================================================================
 # API Routes - Planning Board
