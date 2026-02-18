@@ -662,7 +662,14 @@ async def log_requests(request: Request, call_next):
     
     return response
 
-app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
+FRONTEND_DIST_DIR = Path("frontend/dist")
+FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
+
+# check_dir=False avoids import-time crashes when frontend artifacts are not bundled yet.
+app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR), check_dir=False), name="assets")
+if not FRONTEND_ASSETS_DIR.exists():
+    logger.warning(f"Frontend assets directory not found at startup: {FRONTEND_ASSETS_DIR}")
+
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -674,7 +681,21 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    with open("frontend/dist/index.html", "r") as f:
+    index_file = FRONTEND_DIST_DIR / "index.html"
+    if not index_file.exists():
+        logger.warning(f"Frontend index file not found: {index_file}")
+        return HTMLResponse(
+            content=(
+                "<html><body style='font-family:sans-serif;padding:2rem'>"
+                "<h2>Seminars frontend is not available yet</h2>"
+                "<p>The backend is running, but frontend build artifacts are missing.</p>"
+                "<p>Please run <code>npm --prefix frontend run build</code> and redeploy.</p>"
+                "</body></html>"
+            ),
+            status_code=503,
+        )
+
+    with index_file.open("r") as f:
         return f.read()
 
 @app.get("/public", response_class=HTMLResponse)
@@ -1585,6 +1606,7 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         if s.assigned_seminar_id:
             seminar = db.get(Seminar, s.assigned_seminar_id)
             if seminar:
+                assigned_suggestion_id = None
                 # Access speaker through the relationship
                 try:
                     speaker_name = seminar.speaker.name if seminar.speaker else None
@@ -1595,6 +1617,29 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
                     speaker = db.get(Speaker, seminar.speaker_id)
                     if speaker:
                         slot_data["assigned_speaker_name"] = speaker.name
+
+                # Attach the matched suggestion id to make info-link generation reliable
+                for suggestion in suggestions:
+                    if suggestion.semester_plan_id != plan_id:
+                        continue
+                    if suggestion.status != "confirmed":
+                        continue
+
+                    if seminar.speaker_id and suggestion.speaker_id and seminar.speaker_id == suggestion.speaker_id:
+                        assigned_suggestion_id = suggestion.id
+                        break
+
+                    slot_speaker_name = slot_data.get("assigned_speaker_name")
+                    if (
+                        slot_speaker_name
+                        and suggestion.speaker_name
+                        and suggestion.speaker_name.strip().lower() == slot_speaker_name.strip().lower()
+                    ):
+                        assigned_suggestion_id = suggestion.id
+                        break
+
+                if assigned_suggestion_id:
+                    slot_data["assigned_suggestion_id"] = assigned_suggestion_id
         slots_response.append(slot_data)
     
     return {
@@ -1602,8 +1647,10 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         "suggestions": [
             {
                 "id": s.id,
+                "speaker_id": s.speaker_id,
                 "speaker_name": s.speaker_name,
                 "speaker_affiliation": s.speaker_affiliation,
+                "suggested_by": s.suggested_by,
                 "suggested_topic": s.suggested_topic,
                 "priority": s.priority,
                 "status": s.status,
