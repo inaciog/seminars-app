@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     jwt_secret: str = "your-secret-key-change-in-production"
     api_secret: str = "your-api-secret-for-dashboard"
     master_password: str = "i486983nacio:!"
-    database_url: str = "/tmp/seminars.db"
-    uploads_dir: str = "/tmp/uploads"
+    database_url: str = "/data/seminars.db"
+    uploads_dir: str = "/data/uploads"
     auth_service_url: str = "https://inacio-auth.fly.dev"
     app_url: str = "https://seminars-app.fly.dev"
     
@@ -581,9 +581,9 @@ async def require_auth(request: Request, call_next):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Path("/tmp").mkdir(parents=True, exist_ok=True)
-    Path("/tmp/uploads").mkdir(parents=True, exist_ok=True)
-    Path("/tmp/backups").mkdir(parents=True, exist_ok=True)
+    Path("/data").mkdir(parents=True, exist_ok=True)
+    Path("/data/uploads").mkdir(parents=True, exist_ok=True)
+    Path("/data/backups").mkdir(parents=True, exist_ok=True)
     
     eng = get_engine()
     SQLModel.metadata.create_all(eng)
