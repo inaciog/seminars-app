@@ -429,29 +429,44 @@ export function SemesterPlanning() {
                             // Auto-generate info link for info_request emails
                             let infoLink = '';
                             let linkError = '';
-                            if (type === 'info_request' && slot.assigned_seminar_id && suggestion?.id) {
+                            const shouldGenerateLink = type === 'info_request' && slot.assigned_seminar_id && suggestion?.id;
+                            console.log('Email draft debug:', { 
+                              type, 
+                              assigned_seminar_id: slot.assigned_seminar_id, 
+                              suggestion_id: suggestion?.id,
+                              speaker_name: slot.assigned_speaker_name,
+                              shouldGenerateLink 
+                            });
+                            if (shouldGenerateLink) {
                               try {
+                                const requestBody = { 
+                                  seminar_id: slot.assigned_seminar_id, 
+                                  suggestion_id: suggestion.id
+                                };
+                                console.log('Sending request with body:', requestBody);
                                 const response = await fetchWithAuth('/api/v1/seminars/speaker-tokens/info', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ 
-                                    seminar_id: slot.assigned_seminar_id, 
-                                    suggestion_id: suggestion.id
-                                  }),
+                                  body: JSON.stringify(requestBody),
                                 });
+                                console.log('Response status:', response.status);
                                 if (response.ok) {
                                   const data = await response.json();
                                   infoLink = `${window.location.origin}${data.link}`;
+                                  console.log('Generated link:', infoLink);
                                 } else {
                                   const errorText = await response.text();
-                                  linkError = `Failed to generate link: ${response.status} ${errorText}`;
+                                  linkError = `Failed: ${response.status} - ${errorText}`;
+                                  console.error('Link generation failed:', linkError);
                                 }
                               } catch (err) {
-                                linkError = 'Network error generating link';
+                                linkError = `Network error: ${err}`;
+                                console.error('Network error:', err);
                               }
                             } else if (type === 'info_request') {
                               const suggestionsList = boardData?.suggestions?.map(s => s.speaker_name).join(', ') || 'none';
-                              linkError = `Missing data: seminar_id=${slot.assigned_seminar_id}, suggestion=${suggestion?.id}, speaker="${slot.assigned_speaker_name}", available=[${suggestionsList}]`;
+                              linkError = `Missing: seminar=${slot.assigned_seminar_id}, suggestion=${suggestion?.id}, speaker="${slot.assigned_speaker_name}"`;
+                              console.log('Skipping link generation:', linkError);
                             }
                             
                             setEmailDraft({

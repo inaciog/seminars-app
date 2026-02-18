@@ -31,7 +31,6 @@ primary_region = 'iad'
 [[mounts]]
   source = 'seminars_data'
   destination = '/data'
-  processes = ['app']
 
 [[vm]]
   memory = '512mb'
