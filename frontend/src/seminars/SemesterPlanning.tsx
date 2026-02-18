@@ -423,7 +423,7 @@ export function SemesterPlanning() {
                             }
                             
                             const suggestion = boardData?.suggestions.find(
-                              s => s.speaker_name === slot.assigned_speaker_name
+                              s => s.speaker_name?.trim().toLowerCase() === slot.assigned_speaker_name?.trim().toLowerCase()
                             );
                             
                             // Auto-generate info link for info_request emails
@@ -450,7 +450,8 @@ export function SemesterPlanning() {
                                 linkError = 'Network error generating link';
                               }
                             } else if (type === 'info_request') {
-                              linkError = 'Missing seminar or suggestion data';
+                              const suggestionsList = boardData?.suggestions?.map(s => s.speaker_name).join(', ') || 'none';
+                              linkError = `Missing data: seminar_id=${slot.assigned_seminar_id}, suggestion=${suggestion?.id}, speaker="${slot.assigned_speaker_name}", available=[${suggestionsList}]`;
                             }
                             
                             setEmailDraft({

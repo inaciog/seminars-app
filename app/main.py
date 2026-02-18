@@ -1408,11 +1408,16 @@ async def create_availability_token(
 ):
     """Create a token for speaker to submit availability."""
     suggestion_id = request.get('suggestion_id')
+    
+    logger.info(f"Creating availability token - suggestion_id: {suggestion_id}, user: {user.get('id')}")
+    
     if not suggestion_id:
+        logger.warning("Availability token creation failed: suggestion_id is required")
         raise HTTPException(status_code=400, detail="suggestion_id is required")
     
     suggestion = db.get(SpeakerSuggestion, suggestion_id)
     if not suggestion:
+        logger.warning(f"Availability token creation failed: Suggestion {suggestion_id} not found")
         raise HTTPException(status_code=404, detail="Suggestion not found")
     
     # Create token
@@ -1428,6 +1433,8 @@ async def create_availability_token(
     db.add(db_token)
     db.commit()
     
+    logger.info(f"Availability token created successfully: {token[:8]}... for suggestion {suggestion_id}")
+    
     return {"link": f"/speaker/availability/{token}", "token": token}
 
 @app.post("/api/v1/seminars/speaker-tokens/info")
@@ -1440,12 +1447,23 @@ async def create_info_token(
     suggestion_id = request.get('suggestion_id')
     seminar_id = request.get('seminar_id')
     
+    logger.info(f"Creating info token - suggestion_id: {suggestion_id}, seminar_id: {seminar_id}, user: {user.get('id')}")
+    
     if not suggestion_id:
+        logger.warning("Info token creation failed: suggestion_id is required")
         raise HTTPException(status_code=400, detail="suggestion_id is required")
     
     suggestion = db.get(SpeakerSuggestion, suggestion_id)
     if not suggestion:
+        logger.warning(f"Info token creation failed: Suggestion {suggestion_id} not found")
         raise HTTPException(status_code=404, detail="Suggestion not found")
+    
+    # Validate seminar_id if provided
+    if seminar_id:
+        seminar = db.get(Seminar, seminar_id)
+        if not seminar:
+            logger.warning(f"Info token creation failed: Seminar {seminar_id} not found")
+            raise HTTPException(status_code=404, detail="Seminar not found")
     
     # Create token
     token = generate_token()
@@ -1460,6 +1478,8 @@ async def create_info_token(
     )
     db.add(db_token)
     db.commit()
+    
+    logger.info(f"Info token created successfully: {token[:8]}... for suggestion {suggestion_id}")
     
     return {"link": f"/speaker/info/{token}", "token": token}
 
