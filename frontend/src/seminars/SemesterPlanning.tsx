@@ -428,9 +428,9 @@ export function SemesterPlanning() {
                             
                             // Auto-generate info link for info_request emails
                             let infoLink = '';
+                            let linkError = '';
                             if (type === 'info_request' && slot.assigned_seminar_id && suggestion?.id) {
                               try {
-                                console.log('Generating info link for suggestion:', suggestion.id, 'seminar:', slot.assigned_seminar_id);
                                 const response = await fetchWithAuth('/api/v1/seminars/speaker-tokens/info', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
@@ -442,16 +442,15 @@ export function SemesterPlanning() {
                                 if (response.ok) {
                                   const data = await response.json();
                                   infoLink = `${window.location.origin}${data.link}`;
-                                  console.log('Generated info link:', infoLink);
                                 } else {
                                   const errorText = await response.text();
-                                  console.error('Failed to generate info link:', response.status, errorText);
+                                  linkError = `Failed to generate link: ${response.status} ${errorText}`;
                                 }
                               } catch (err) {
-                                console.error('Failed to generate info link:', err);
+                                linkError = 'Network error generating link';
                               }
-                            } else {
-                              console.log('Skipping info link generation:', { type, assigned_seminar_id: slot.assigned_seminar_id, suggestion_id: suggestion?.id });
+                            } else if (type === 'info_request') {
+                              linkError = 'Missing seminar or suggestion data';
                             }
                             
                             setEmailDraft({
@@ -470,6 +469,7 @@ export function SemesterPlanning() {
                               }),
                               suggestedBy: suggestion?.suggested_by,
                               infoLink,
+                              linkError,
                             });
                           }}
                         />
@@ -522,9 +522,9 @@ export function SemesterPlanning() {
                         onDraftEmail={async (type) => {
                           // Auto-generate availability link if needed
                           let availabilityLink = '';
+                          let linkError = '';
                           if (type === 'availability_request') {
                             try {
-                              console.log('Generating availability link for suggestion:', suggestion.id);
                               const response = await fetchWithAuth('/api/v1/seminars/speaker-tokens/availability', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -533,13 +533,12 @@ export function SemesterPlanning() {
                               if (response.ok) {
                                 const data = await response.json();
                                 availabilityLink = `${window.location.origin}${data.link}`;
-                                console.log('Generated availability link:', availabilityLink);
                               } else {
                                 const errorText = await response.text();
-                                console.error('Failed to generate availability link:', response.status, errorText);
+                                linkError = `Failed to generate link: ${response.status}`;
                               }
                             } catch (err) {
-                              console.error('Failed to generate link:', err);
+                              linkError = 'Network error generating link';
                             }
                           }
                           setEmailDraft({
@@ -547,6 +546,7 @@ export function SemesterPlanning() {
                             speakerName: suggestion.speaker_name,
                             suggestedBy: suggestion.suggested_by,
                             availabilityLink,
+                            linkError,
                           });
                         }}
                       />
@@ -1439,6 +1439,7 @@ interface EmailDraftData {
   suggestedBy?: string;
   infoLink?: string;
   availabilityLink?: string;
+  linkError?: string;
 }
 
 // Email Drafting Modal
@@ -1642,6 +1643,8 @@ http://www.inaciobo.com`,
                     <Check className="w-4 h-4" />
                     Generated and included in email
                   </span>
+                ) : draft.linkError ? (
+                  <span className="text-red-600">Error: {draft.linkError}</span>
                 ) : (
                   <span className="text-red-600">Failed to generate - please use "Link" button separately</span>
                 )}
@@ -1655,6 +1658,8 @@ http://www.inaciobo.com`,
                     <Check className="w-4 h-4" />
                     Generated and included in email
                   </span>
+                ) : draft.linkError ? (
+                  <span className="text-red-600">Error: {draft.linkError}</span>
                 ) : (
                   <span className="text-red-600">Failed to generate - please use "Link" button separately</span>
                 )}
