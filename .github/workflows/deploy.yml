@@ -2,34 +2,20 @@ name: Deploy to Fly.io
 
 on:
   push:
-    branches: [main]
-  schedule:
-    # Run backup daily at 3 AM UTC
-    - cron: '0 3 * * *'
+    branches: [master, main]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Setup Fly.io
+      - name: Setup Fly CLI
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly.io
         run: flyctl deploy --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-  backup:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    steps:
-      - name: Setup Fly.io
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Execute backup
-        run: |
-          flyctl ssh console -a seminars-app -C "/app/backup.sh"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
