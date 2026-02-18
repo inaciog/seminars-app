@@ -589,6 +589,43 @@ async def delete_speaker(speaker_id: int, db: Session = Depends(get_db), user: d
     db.commit()
     return {"success": True}
 
+# Additional endpoints for frontend compatibility (/api/v1/seminars/*)
+@app.get("/api/v1/seminars/speakers", response_model=List[SpeakerResponse])
+async def list_speakers_v1(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    statement = select(Speaker).order_by(Speaker.name)
+    return db.exec(statement).all()
+
+@app.post("/api/v1/seminars/speakers", response_model=SpeakerResponse)
+async def create_speaker_v1(speaker: SpeakerCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    db_speaker = Speaker(**speaker.model_dump())
+    db.add(db_speaker)
+    db.commit()
+    db.refresh(db_speaker)
+    return db_speaker
+
+@app.put("/api/v1/seminars/speakers/{speaker_id}", response_model=SpeakerResponse)
+async def update_speaker_v1(speaker_id: int, update: SpeakerCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    speaker = db.get(Speaker, speaker_id)
+    if not speaker:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+    
+    for key, value in update.model_dump().items():
+        setattr(speaker, key, value)
+    
+    db.commit()
+    db.refresh(speaker)
+    return speaker
+
+@app.delete("/api/v1/seminars/speakers/{speaker_id}")
+async def delete_speaker_v1(speaker_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    speaker = db.get(Speaker, speaker_id)
+    if not speaker:
+        raise HTTPException(status_code=404, detail="Speaker not found")
+    
+    db.delete(speaker)
+    db.commit()
+    return {"success": True}
+
 # ============================================================================
 # API Routes - Rooms
 # ============================================================================
@@ -666,6 +703,61 @@ async def update_seminar(seminar_id: int, update: SeminarUpdate, db: Session = D
 
 @app.delete("/api/seminars/{seminar_id}")
 async def delete_seminar(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    seminar = db.get(Seminar, seminar_id)
+    if not seminar:
+        raise HTTPException(status_code=404, detail="Seminar not found")
+    
+    db.delete(seminar)
+    db.commit()
+    return {"success": True}
+
+# Additional endpoints for frontend compatibility (/api/v1/seminars/*)
+@app.get("/api/v1/seminars/seminars", response_model=List[SeminarResponse])
+async def list_seminars_v1(
+    upcoming: bool = False,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    statement = select(Seminar).order_by(Seminar.date)
+    
+    if upcoming:
+        today = date_type.today()
+        statement = statement.where(Seminar.date >= today)
+    
+    return db.exec(statement).all()
+
+@app.post("/api/v1/seminars/seminars", response_model=SeminarResponse)
+async def create_seminar_v1(seminar: SeminarCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    db_seminar = Seminar(**seminar.model_dump())
+    db.add(db_seminar)
+    db.commit()
+    db.refresh(db_seminar)
+    return db_seminar
+
+@app.get("/api/v1/seminars/seminars/{seminar_id}", response_model=SeminarResponse)
+async def get_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    seminar = db.get(Seminar, seminar_id)
+    if not seminar:
+        raise HTTPException(status_code=404, detail="Seminar not found")
+    return seminar
+
+@app.patch("/api/v1/seminars/seminars/{seminar_id}", response_model=SeminarResponse)
+async def update_seminar_v1(seminar_id: int, update: SeminarUpdate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    seminar = db.get(Seminar, seminar_id)
+    if not seminar:
+        raise HTTPException(status_code=404, detail="Seminar not found")
+    
+    update_data = update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(seminar, key, value)
+    
+    seminar.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(seminar)
+    return seminar
+
+@app.delete("/api/v1/seminars/seminars/{seminar_id}")
+async def delete_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     seminar = db.get(Seminar, seminar_id)
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
