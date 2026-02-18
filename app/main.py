@@ -545,12 +545,15 @@ def verify_token(token: str) -> Optional[dict]:
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    token: Optional[str] = Query(None)
+    token: Optional[str] = Query(None),
+    access_code: Optional[str] = Query(None)
 ) -> dict:
     """Get current user from token (header, query param, or cookie)."""
     auth_token = credentials.credentials if credentials else None
     if not auth_token:
         auth_token = token
+    if not auth_token:
+        auth_token = access_code  # Support access_code query param for file downloads
     if not auth_token:
         auth_token = request.cookies.get("token")
     
@@ -1670,6 +1673,7 @@ async def download_file_v1(
     seminar_id: int,
     file_id: int,
     access_code: Optional[str] = Query(None),
+    token: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
