@@ -51,7 +51,14 @@ settings = Settings()
 # Database Models
 # ============================================================================
 
-engine = create_engine(f"sqlite:///{settings.database_url}", connect_args={"check_same_thread": False})
+# Engine will be initialized in lifespan after ensuring directories exist
+engine = None
+
+def get_engine():
+    global engine
+    if engine is None:
+        engine = create_engine(f"sqlite:///{settings.database_url}", connect_args={"check_same_thread": False})
+    return engine
 
 class Speaker(SQLModel, table=True):
     __tablename__ = "speakers"
@@ -241,7 +248,7 @@ class AvailabilityCreate(BaseModel):
 security = HTTPBearer(auto_error=False)
 
 def get_db():
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         yield session
 
 def verify_token(token: str) -> Optional[dict]:
@@ -345,11 +352,14 @@ def save_uploaded_file(file: UploadFile, seminar_id: int, category: Optional[str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup - ensure data directory exists
+    # Startup - ensure data directory exists first
     Path("/data").mkdir(parents=True, exist_ok=True)
     Path("/data/uploads").mkdir(parents=True, exist_ok=True)
     Path("/data/backups").mkdir(parents=True, exist_ok=True)
-    SQLModel.metadata.create_all(engine)
+    
+    # Now create engine and tables
+    eng = get_engine()
+    SQLModel.metadata.create_all(eng)
     yield
     # Shutdown
 
