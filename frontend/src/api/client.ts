@@ -57,9 +57,14 @@ api.interceptors.response.use(
 export const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Response> => {
   const token = getToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
+  
+  // Only set Content-Type if it's not FormData (browser will set it with boundary)
+  const isFormData = options.body instanceof FormData;
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
   
   if (token) {
     headers.Authorization = `Bearer ${token}`;
