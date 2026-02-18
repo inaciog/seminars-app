@@ -285,12 +285,14 @@ async def get_current_user(
 
 async def require_auth(request: Request, call_next):
     """Middleware to check auth on HTML routes."""
-    # Skip API routes and static files
-    if request.url.path.startswith("/api/") or request.url.path.startswith("/static/"):
+    path = request.url.path
+    
+    # Skip API routes, static files, and React assets
+    if path.startswith("/api/") or path.startswith("/static/") or path.startswith("/assets/"):
         return await call_next(request)
     
     # Skip public page
-    if request.url.path == "/public":
+    if path == "/public":
         return await call_next(request)
     
     # Check for token
