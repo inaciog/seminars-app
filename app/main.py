@@ -352,7 +352,7 @@ class SeminarResponse(BaseModel):
     calendar_invite_sent: bool
     website_updated: bool
     catering_ordered: bool
-    speaker: SpeakerResponse
+    speaker: Optional[SpeakerResponse] = None
     room: Optional[str]  # Just the room name, not full object
     
     @field_validator('room', mode='before')
