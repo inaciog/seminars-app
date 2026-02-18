@@ -23,6 +23,11 @@ def seed_data():
     
     engine = get_engine()
     
+    # Create all tables
+    print("📊 Creating database tables...")
+    SQLModel.metadata.create_all(engine)
+    print("  ✓ Tables created")
+    
     with Session(engine) as db:
         print("🌱 Seeding database with test data...")
         
