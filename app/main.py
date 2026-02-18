@@ -8,6 +8,8 @@ authentication service (inacio-auth.fly.dev).
 import os
 import uuid
 import shutil
+import logging
+import time
 from datetime import datetime, date as date_type, timedelta
 from pathlib import Path
 from typing import Optional, List
@@ -22,6 +24,13 @@ from jose import JWTError, jwt
 from sqlmodel import SQLModel, Field, Session, create_engine, select, Relationship
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_settings import BaseSettings
+
+# Import logging configuration
+from app.logging_config import init_logging, log_audit, log_request
+
+# Initialize logging
+init_logging()
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Configuration
@@ -527,8 +536,10 @@ def verify_token(token: str) -> Optional[dict]:
     """Verify JWT token from auth service."""
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+        logger.debug(f"Token verified for user: {payload.get('id', 'unknown')}")
         return payload
-    except JWTError:
+    except JWTError as e:
+        logger.warning(f"Token verification failed: {str(e)}")
         return None
 
 async def get_current_user(
@@ -544,10 +555,12 @@ async def get_current_user(
         auth_token = request.cookies.get("token")
     
     if not auth_token:
+        logger.warning(f"Authentication failed: No token provided - {request.method} {request.url.path}")
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     user = verify_token(auth_token)
     if not user:
+        logger.warning(f"Authentication failed: Invalid token - {request.method} {request.url.path}")
         raise HTTPException(status_code=401, detail="Invalid token")
     
     return user
@@ -597,6 +610,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    
+    # Get client IP
+    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Calculate duration
+    duration_ms = (time.time() - start_time) * 1000
+    
+    # Get user from token if available
+    user = None
+    try:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+            user = payload.get("id", "unknown")
+    except:
+        pass
+    
+    # Log the request
+    log_request(
+        method=request.method,
+        path=request.url.path,
+        status=response.status_code,
+        duration_ms=duration_ms,
+        user=user,
+        ip=client_ip
+    )
+    
+    return response
 
 app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
@@ -820,6 +870,8 @@ async def create_seminar(seminar: SeminarCreate, db: Session = Depends(get_db), 
     db.add(db_seminar)
     db.commit()
     db.refresh(db_seminar)
+    log_audit("SEMINAR_CREATE", user.get('id'), {"seminar_id": db_seminar.id, "title": db_seminar.title})
+    logger.info(f"Seminar created: {db_seminar.title} (ID: {db_seminar.id}) by {user.get('id')}")
     return db_seminar
 
 @app.get("/api/seminars/{seminar_id}", response_model=SeminarResponse)
@@ -1528,6 +1580,8 @@ async def upload_file(
         raise HTTPException(status_code=404, detail="Seminar not found")
     
     uploaded = save_uploaded_file(file, seminar_id, category, db)
+    log_audit("FILE_UPLOAD", user.get('id'), {"seminar_id": seminar_id, "file": file.filename, "category": category})
+    logger.info(f"File uploaded: {file.filename} for seminar {seminar_id} by {user.get('id')}")
     return {"success": True, "file_id": uploaded.id}
 
 @app.get("/api/seminars/{seminar_id}/files")
@@ -1566,6 +1620,8 @@ async def upload_file_v1(
         raise HTTPException(status_code=404, detail="Seminar not found")
     
     uploaded = save_uploaded_file(file, seminar_id, file_category, db)
+    log_audit("FILE_UPLOAD", user.get('id'), {"seminar_id": seminar_id, "file": file.filename, "category": file_category})
+    logger.info(f"File uploaded: {file.filename} for seminar {seminar_id} by {user.get('id')}")
     return {"success": True, "file_id": uploaded.id, "message": "File uploaded successfully"}
 
 # Additional files endpoints for frontend compatibility
