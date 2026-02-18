@@ -445,8 +445,8 @@ class SpeakerAvailabilitySubmit(BaseModel):
 class SeminarDetailsUpdate(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
-    check_in_date: Optional[date_type] = None
-    check_out_date: Optional[date_type] = None
+    check_in_date: Optional[str] = None
+    check_out_date: Optional[str] = None
     passport_number: Optional[str] = None
     passport_country: Optional[str] = None
     payment_email: Optional[str] = None
@@ -457,6 +457,21 @@ class SeminarDetailsUpdate(BaseModel):
     swift_code: Optional[str] = None
     currency: Optional[str] = None
     beneficiary_address: Optional[str] = None
+    departure_city: Optional[str] = None
+    travel_method: Optional[str] = None
+    estimated_travel_cost: Optional[str] = None
+    needs_accommodation: Optional[bool] = None
+    accommodation_nights: Optional[str] = None
+    estimated_hotel_cost: Optional[str] = None
+    
+    def get_date_or_none(self, field_value: Optional[str]) -> Optional[date_type]:
+        """Convert string date to date object or None if empty."""
+        if not field_value or field_value.strip() == '':
+            return None
+        try:
+            return date_type.fromisoformat(field_value)
+        except ValueError:
+            return None
     departure_city: Optional[str] = None
     travel_method: Optional[str] = None
     estimated_travel_cost: Optional[str] = None
@@ -968,9 +983,9 @@ async def update_seminar_details_v1(
     
     # Update details fields
     if data.check_in_date is not None:
-        details.check_in_date = data.check_in_date
+        details.check_in_date = data.get_date_or_none(data.check_in_date)
     if data.check_out_date is not None:
-        details.check_out_date = data.check_out_date
+        details.check_out_date = data.get_date_or_none(data.check_out_date)
     if data.passport_number is not None:
         details.passport_number = data.passport_number
     if data.passport_country is not None:
