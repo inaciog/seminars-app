@@ -1584,20 +1584,20 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         # If slot has an assigned seminar, get the speaker name
         if s.assigned_seminar_id:
             seminar = db.get(Seminar, s.assigned_seminar_id)
-            logger.info(f"Slot {s.id}: assigned_seminar_id={s.assigned_seminar_id}, seminar={seminar}")
+            print(f"DEBUG Slot {s.id}: assigned_seminar_id={s.assigned_seminar_id}, seminar={seminar}", flush=True)
             if seminar:
-                logger.info(f"Slot {s.id}: seminar.speaker_id={seminar.speaker_id}")
+                print(f"DEBUG Slot {s.id}: seminar.speaker_id={seminar.speaker_id}", flush=True)
                 # Access speaker through the relationship
                 try:
                     speaker_name = seminar.speaker.name if seminar.speaker else None
-                    logger.info(f"Slot {s.id}: speaker_name from relationship={speaker_name}")
+                    print(f"DEBUG Slot {s.id}: speaker_name from relationship={speaker_name}", flush=True)
                     if speaker_name:
                         slot_data["assigned_speaker_name"] = speaker_name
                 except Exception as e:
-                    logger.warning(f"Slot {s.id}: Error accessing speaker relationship: {e}")
+                    print(f"DEBUG Slot {s.id}: Error accessing speaker relationship: {e}", flush=True)
                     # If speaker relationship isn't loaded, query it directly
                     speaker = db.get(Speaker, seminar.speaker_id)
-                    logger.info(f"Slot {s.id}: speaker from direct query={speaker}")
+                    print(f"DEBUG Slot {s.id}: speaker from direct query={speaker}", flush=True)
                     if speaker:
                         slot_data["assigned_speaker_name"] = speaker.name
         slots_response.append(slot_data)
