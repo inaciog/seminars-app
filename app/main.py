@@ -28,6 +28,13 @@ from pydantic_settings import BaseSettings
 # Import logging configuration
 from app.logging_config import init_logging, log_audit, log_request
 
+# Import templates
+from app.templates import (
+    get_availability_page_html,
+    get_speaker_info_page_html,
+    get_invalid_token_html
+)
+
 # Initialize logging
 init_logging()
 logger = logging.getLogger(__name__)
@@ -756,107 +763,19 @@ async def speaker_availability_page(token: str, db: Session = Depends(get_db)):
     db_token = db.exec(statement).first()
     
     if not db_token:
-        return HTMLResponse(content="""
-        <!DOCTYPE html>
-        <html><head><title>Invalid Link</title></head>
-        <body style="font-family:sans-serif;text-align:center;padding:50px;">
-            <h1>❌ Invalid or Expired Link</h1>
-            <p>This link is no longer valid.</p>
-        </body></html>
-        """, status_code=404)
+        return HTMLResponse(content=get_invalid_token_html(), status_code=404)
     
     suggestion = db_token.suggestion
+    plan = db.get(SemesterPlan, suggestion.semester_plan_id) if suggestion.semester_plan_id else None
     
-    return HTMLResponse(content=f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Submit Availability - {suggestion.speaker_name}</title>
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                background: #f5f5f7;
-                color: #1d1d1f;
-                line-height: 1.6;
-                padding: 40px 20px;
-            }}
-            .container {{ max-width: 600px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
-            h1 {{ margin-bottom: 8px; }}
-            .subtitle {{ color: #666; margin-bottom: 24px; }}
-            .info {{ background: #f0f0f0; padding: 16px; border-radius: 8px; margin-bottom: 24px; }}
-            .info p {{ margin: 4px 0; }}
-            label {{ display: block; margin-bottom: 8px; font-weight: 500; }}
-            input, select, textarea {{ width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; font-size: 16px; }}
-            button {{ background: #0a84ff; color: white; border: none; padding: 14px 28px; border-radius: 8px; font-size: 16px; cursor: pointer; }}
-            button:hover {{ background: #0066cc; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>📅 Submit Your Availability</h1>
-            <p class="subtitle">Hi {suggestion.speaker_name}, please let us know when you're available.</p>
-            
-            <div class="info">
-                <p><strong>Topic:</strong> {suggestion.suggested_topic or 'TBD'}</p>
-                <p><strong>Affiliation:</strong> {suggestion.speaker_affiliation or 'N/A'}</p>
-            </div>
-            
-            <form id="availabilityForm">
-                <label for="dates">Available Dates (one per line)</label>
-                <textarea id="dates" rows="4" placeholder="2025-03-15&#10;2025-03-22&#10;2025-04-05"></textarea>
-                
-                <label for="notes">Additional Notes</label>
-                <textarea id="notes" rows="3" placeholder="Any constraints or preferences..."></textarea>
-                
-                <button type="submit">Submit Availability</button>
-            </form>
-            
-            <div id="message" style="margin-top: 16px; display: none;"></div>
-        </div>
-        
-        <script>
-            document.getElementById('availabilityForm').addEventListener('submit', async (e) => {{
-                e.preventDefault();
-                const dates = document.getElementById('dates').value.trim().split('\n').filter(d => d);
-                const notes = document.getElementById('notes').value;
-                
-                const availabilities = dates.map(date => ({{
-                    date: date.trim(),
-                    preference: 'available'
-                }}));
-                
-                try {{
-                    const response = await fetch('/api/v1/seminars/speaker-tokens/{token}/submit-availability', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{availabilities, notes}})
-                    }});
-                    
-                    const msg = document.getElementById('message');
-                    if (response.ok) {{
-                        msg.style.display = 'block';
-                        msg.style.color = 'green';
-                        msg.textContent = '✅ Thank you! Your availability has been submitted.';
-                        document.getElementById('availabilityForm').reset();
-                    }} else {{
-                        msg.style.display = 'block';
-                        msg.style.color = 'red';
-                        msg.textContent = '❌ Error submitting. Please try again.';
-                    }}
-                }} catch (err) {{
-                    const msg = document.getElementById('message');
-                    msg.style.display = 'block';
-                    msg.style.color = 'red';
-                    msg.textContent = '❌ Network error. Please try again.';
-                }}
-            }});
-        </script>
-    </body>
-    </html>
-    """)
+    return HTMLResponse(content=get_availability_page_html(
+        speaker_name=suggestion.speaker_name,
+        speaker_email=suggestion.speaker_email,
+        speaker_affiliation=suggestion.speaker_affiliation,
+        suggested_topic=suggestion.suggested_topic,
+        semester_plan=plan.name if plan else None,
+        token=token
+    ))
 
 @app.get("/speaker/info/{token}", response_class=HTMLResponse)
 async def speaker_info_page(token: str, db: Session = Depends(get_db)):
@@ -871,141 +790,19 @@ async def speaker_info_page(token: str, db: Session = Depends(get_db)):
     db_token = db.exec(statement).first()
     
     if not db_token:
-        return HTMLResponse(content="""
-        <!DOCTYPE html>
-        <html><head><title>Invalid Link</title></head>
-        <body style="font-family:sans-serif;text-align:center;padding:50px;">
-            <h1>❌ Invalid or Expired Link</h1>
-            <p>This link is no longer valid.</p>
-        </body></html>
-        """, status_code=404)
+        return HTMLResponse(content=get_invalid_token_html(), status_code=404)
     
     suggestion = db_token.suggestion
     seminar = db_token.seminar
     
-    return HTMLResponse(content=f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Speaker Information - {suggestion.speaker_name}</title>
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                background: #f5f5f7;
-                color: #1d1d1f;
-                line-height: 1.6;
-                padding: 40px 20px;
-            }}
-            .container {{ max-width: 700px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
-            h1 {{ margin-bottom: 8px; }}
-            .subtitle {{ color: #666; margin-bottom: 24px; }}
-            .seminar-info {{ background: #e8f4ff; padding: 16px; border-radius: 8px; margin-bottom: 24px; }}
-            .seminar-info p {{ margin: 4px 0; }}
-            h2 {{ margin: 24px 0 16px; font-size: 18px; }}
-            label {{ display: block; margin-bottom: 4px; font-weight: 500; font-size: 14px; }}
-            input, textarea {{ width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 12px; font-size: 15px; }}
-            .row {{ display: flex; gap: 16px; }}
-            .row > div {{ flex: 1; }}
-            button {{ background: #0a84ff; color: white; border: none; padding: 14px 28px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 16px; }}
-            button:hover {{ background: #0066cc; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>📝 Speaker Information Form</h1>
-            <p class="subtitle">Hi {suggestion.speaker_name}, please provide your details for our records.</p>
-            
-            <div class="seminar-info">
-                <p><strong>Seminar:</strong> {seminar.title if seminar else 'TBD'}</p>
-                <p><strong>Date:</strong> {seminar.date.strftime('%B %d, %Y') if seminar else 'TBD'}</p>
-            </div>
-            
-            <form id="infoForm">
-                <h2>Personal Information</h2>
-                <div class="row">
-                    <div>
-                        <label for="passport_number">Passport Number</label>
-                        <input type="text" id="passport_number" placeholder="e.g., A12345678">
-                    </div>
-                    <div>
-                        <label for="passport_country">Passport Country</label>
-                        <input type="text" id="passport_country" placeholder="e.g., United States">
-                    </div>
-                </div>
-                
-                <h2>Travel Information</h2>
-                <div class="row">
-                    <div>
-                        <label for="departure_city">Departure City</label>
-                        <input type="text" id="departure_city" placeholder="e.g., New York">
-                    </div>
-                    <div>
-                        <label for="travel_method">Travel Method</label>
-                        <input type="text" id="travel_method" placeholder="e.g., Flight">
-                    </div>
-                </div>
-                
-                <h2>Payment Information</h2>
-                <label for="payment_email">Payment Email</label>
-                <input type="email" id="payment_email" placeholder="your@email.com">
-                
-                <label for="beneficiary_name">Beneficiary Name</label>
-                <input type="text" id="beneficiary_name" placeholder="Full name for payment">
-                
-                <label for="bank_name">Bank Name</label>
-                <input type="text" id="bank_name" placeholder="Your bank name">
-                
-                <button type="submit">Submit Information</button>
-            </form>
-            
-            <div id="message" style="margin-top: 16px; display: none;"></div>
-        </div>
-        
-        <script>
-            document.getElementById('infoForm').addEventListener('submit', async (e) => {{
-                e.preventDefault();
-                
-                const data = {{
-                    passport_number: document.getElementById('passport_number').value,
-                    passport_country: document.getElementById('passport_country').value,
-                    departure_city: document.getElementById('departure_city').value,
-                    travel_method: document.getElementById('travel_method').value,
-                    payment_email: document.getElementById('payment_email').value,
-                    beneficiary_name: document.getElementById('beneficiary_name').value,
-                    bank_name: document.getElementById('bank_name').value
-                }};
-                
-                try {{
-                    const response = await fetch('/api/v1/seminars/speaker-tokens/{token}/submit-info', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify(data)
-                    }});
-                    
-                    const msg = document.getElementById('message');
-                    if (response.ok) {{
-                        msg.style.display = 'block';
-                        msg.style.color = 'green';
-                        msg.textContent = '✅ Thank you! Your information has been submitted.';
-                    }} else {{
-                        msg.style.display = 'block';
-                        msg.style.color = 'red';
-                        msg.textContent = '❌ Error submitting. Please try again.';
-                    }}
-                }} catch (err) {{
-                    const msg = document.getElementById('message');
-                    msg.style.display = 'block';
-                    msg.style.color = 'red';
-                    msg.textContent = '❌ Network error. Please try again.';
-                }}
-            }});
-        </script>
-    </body>
-    </html>
-    """)
+    return HTMLResponse(content=get_speaker_info_page_html(
+        speaker_name=suggestion.speaker_name,
+        speaker_email=suggestion.speaker_email,
+        speaker_affiliation=suggestion.speaker_affiliation,
+        seminar_title=seminar.title if seminar else None,
+        seminar_date=seminar.date.strftime('%B %d, %Y') if seminar else None,
+        token=token
+    ))
 
 # ============================================================================
 # API Routes - Speakers
