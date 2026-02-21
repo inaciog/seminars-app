@@ -202,6 +202,9 @@ export function SeminarsModule() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['speakers'] });
     },
+    onError: (error: any) => {
+      alert(`Failed to delete speaker: ${error.message}`);
+    },
   });
 
   const deleteSeminarMutation = useMutation({
@@ -211,6 +214,9 @@ export function SeminarsModule() {
       queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
       // Invalidate all planning-board queries to refresh slot assignments
       queryClient.invalidateQueries({ queryKey: ['planning-board'] });
+    },
+    onError: (error: any) => {
+      alert(`Failed to delete seminar: ${error.message}`);
     },
   });
 

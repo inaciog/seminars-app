@@ -75,7 +75,23 @@ def get_um_styles():
             box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
         }
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+        @media (max-width: 600px) { 
+            .form-row { grid-template-columns: 1fr; }
+            body { padding: 10px; }
+            .content { padding: 20px; }
+            .welcome { margin: -20px -20px 20px -20px; padding: 20px; }
+            .welcome h2 { font-size: 22px; }
+            .um-header h1 { font-size: 18px; }
+            .um-header .subtitle { font-size: 12px; }
+            .info-card { padding: 15px; }
+            .info-label { width: 120px; }
+            input, textarea, select { font-size: 16px; padding: 14px; }
+            .btn-submit { width: 100%; margin: 30px 0 0 0; }
+            .button-group { flex-direction: column; }
+            .btn-secondary { width: 100%; margin-bottom: 10px; }
+            .file-upload-area { padding: 20px 15px; }
+            .um-footer { margin: 30px -20px -20px -20px; padding: 15px; font-size: 12px; }
+        }
         .checkbox-group { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
         .btn-submit {
             background: linear-gradient(135deg, var(--um-blue) 0%, var(--um-light-blue) 100%);
@@ -162,6 +178,11 @@ def get_um_styles():
             background: var(--um-blue);
             color: white;
         }}
+        .calendar-day.range-start {{
+            background: #ff9800;
+            color: white;
+            border: 2px solid #f57c00;
+        }}
         .calendar-day.in-range {{
             background: #90caf9;
             color: white;
@@ -247,6 +268,21 @@ def get_um_styles():
             cursor: pointer;
             font-weight: bold;
         }}
+        .progress-bar {{
+            width: 100%;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            margin-top: 8px;
+            display: none;
+            overflow: hidden;
+        }}
+        .progress-fill {{
+            height: 100%;
+            background: var(--um-light-blue);
+            width: 0%;
+            transition: width 0.3s ease;
+        }}
         .save-indicator {{
             position: fixed;
             top: 20px;
@@ -302,7 +338,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
 <body>
     <div class="um-header">
         <h1>🏛️ University of Macau</h1>
-        <div class="subtitle">Department of Computer Science · Faculty of Science and Technology</div>
+        <div class="subtitle">Department of Economics · Faculty of Social Sciences</div>
     </div>
     
     <div class="container">
@@ -324,7 +360,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             <form id="availabilityForm">
                 <div class="form-section">
                     <h3>Select Available Dates</h3>
-                    <p style="margin-bottom: 15px; color: #666;">Click on dates to select them. Click and drag to select a range. Click again to deselect.</p>
+                    <p style="margin-bottom: 15px; color: #666;">Click on dates to select them. Click again to deselect. Use the buttons below to add date ranges.</p>
                     
                     <div class="calendar-container">
                         <div class="calendar-header">
@@ -337,9 +373,20 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
                         </div>
                     </div>
                     
+                    <div class="range-controls" style="margin: 15px 0; padding: 15px; background: #f5f5f5; border-radius: 8px;">
+                        <p style="margin-bottom: 10px; font-weight: 500;">Quick Add Range:</p>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                            <input type="date" id="rangeStart" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <span>to</span>
+                            <input type="date" id="rangeEnd" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <button type="button" id="addRangeBtn" style="padding: 8px 16px; background: var(--um-blue); color: white; border: none; border-radius: 4px; cursor: pointer;">Add Range</button>
+                        </div>
+                    </div>
+                    
                     <div class="selected-dates" id="selectedDatesContainer" style="display: none;">
-                        <h4>✓ Selected Dates:</h4>
+                        <h4>✓ Selected Dates (<span id="selectedCount">0</span>):</h4>
                         <div id="selectedDatesList"></div>
+                        <button type="button" id="clearAllBtn" style="margin-top: 10px; padding: 6px 12px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Clear All</button>
                     </div>
                     
                     <input type="hidden" id="selectedDatesInput" name="selected_dates">
@@ -368,7 +415,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             <div id="message" class="message"></div>
         </div>
         <div class="um-footer">
-            <p>University of Macau · Faculty of Science and Technology · Department of Computer Science</p>
+            <p>University of Macau · Faculty of Social Sciences · Department of Economics</p>
         </div>
     </div>
     
@@ -378,8 +425,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
         const semesterEnd = new Date('{semester_end}');
         let currentDate = new Date(semesterStart);
         let selectedDates = new Set();
-        let isDragging = false;
-        let dragStart = null;
+        let rangeStart = null;
         
         const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                           'July', 'August', 'September', 'October', 'November', 'December'];
@@ -446,10 +492,11 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
                     if (selectedDates.has(dateStr)) {{
                         el.classList.add('selected');
                     }}
+                    if (rangeStart === dateStr) {{
+                        el.classList.add('range-start');
+                    }}
                     
-                    el.addEventListener('mousedown', () => startDrag(dateStr));
-                    el.addEventListener('mouseenter', () => dragOver(dateStr));
-                    el.addEventListener('mouseup', () => endDrag());
+                    el.addEventListener('click', () => handleDateClick(dateStr));
                 }}
             }}
             
@@ -460,33 +507,39 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             return date.toISOString().split('T')[0];
         }}
         
-        function startDrag(dateStr) {{
-            isDragging = true;
-            dragStart = dateStr;
-            toggleDate(dateStr);
-        }}
-        
-        function dragOver(dateStr) {{
-            if (!isDragging || !dragStart) return;
+        function handleDateClick(dateStr) {{
+            // If no range start, set it
+            if (!rangeStart) {{
+                rangeStart = dateStr;
+                renderCalendar();
+                updateRangeHint('Click another date to select a range, or click the same date to select just that day.');
+                return;
+            }}
             
-            // Select range
-            const start = new Date(Math.min(new Date(dragStart), new Date(dateStr)));
-            const end = new Date(Math.max(new Date(dragStart), new Date(dateStr)));
+            // If clicking the same date, just toggle it
+            if (rangeStart === dateStr) {{
+                toggleDate(dateStr);
+                rangeStart = null;
+                updateRangeHint('');
+                renderCalendar();
+                return;
+            }}
+            
+            // Select range between rangeStart and clicked date
+            const start = new Date(Math.min(new Date(rangeStart), new Date(dateStr)));
+            const end = new Date(Math.max(new Date(rangeStart), new Date(dateStr)));
             
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {{
-                const dateStr = formatDate(d);
+                const ds = formatDate(d);
                 if (d >= semesterStart && d <= semesterEnd) {{
-                    selectedDates.add(dateStr);
+                    selectedDates.add(ds);
                 }}
             }}
             
+            rangeStart = null;
+            updateRangeHint('');
             renderCalendar();
             updateSelectedDates();
-        }}
-        
-        function endDrag() {{
-            isDragging = false;
-            dragStart = null;
         }}
         
         function toggleDate(dateStr) {{
@@ -497,6 +550,11 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             }}
             renderCalendar();
             updateSelectedDates();
+        }}
+        
+        function updateRangeHint(text) {{
+            const hint = document.getElementById('rangeHint');
+            if (hint) hint.textContent = text;
         }}
         
         function updateSelectedDates() {{
@@ -627,9 +685,29 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
     {styles}
 </head>
 <body>
+    <script>console.log('Speaker info page loaded - v5');</script>
+    <div id="debugPanel" style="position:fixed;bottom:0;left:0;right:0;background:#333;color:#0f0;font-family:monospace;font-size:12px;max-height:150px;overflow:auto;z-index:9999;padding:10px;display:none;">
+        <div style="color:#fff;font-weight:bold;margin-bottom:5px;">Debug Log <button onclick="document.getElementById('debugPanel').style.display='none'" style="float:right;">X</button></div>
+        <div id="debugLog"></div>
+    </div>
+    <button onclick="document.getElementById('debugPanel').style.display='block'" style="position:fixed;bottom:10px;right:10px;z-index:9998;background:#333;color:#0f0;border:none;padding:5px 10px;font-size:10px;cursor:pointer;">Show Debug</button>
+    <script>
+        function debugLog(msg) {{
+            try {{
+                const log = document.getElementById('debugLog');
+                if (!log) return;
+                const time = new Date().toLocaleTimeString();
+                log.innerHTML += '<div>[' + time + '] ' + msg + '</div>';
+            }} catch (e) {{}}
+            try {{ console.log(msg); }} catch (e) {{}}
+        }}
+        try {{
+            debugLog('Page initialized');
+        }} catch (e) {{}}
+    </script>
     <div class="um-header">
         <h1>🏛️ University of Macau</h1>
-        <div class="subtitle">Department of Computer Science · Faculty of Science and Technology</div>
+        <div class="subtitle">Department of Economics · Faculty of Social Sciences</div>
     </div>
     
     <div class="container">
@@ -641,14 +719,22 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
             
             <div class="info-card">
                 <h3>Seminar Details</h3>
-                <div class="info-row"><div class="info-label">Speaker:</div><div class="info-value">{speaker_name}</div></div>
-                <div class="info-row"><div class="info-label">Title:</div><div class="info-value">{seminar_title or 'TBD'}</div></div>
                 <div class="info-row"><div class="info-label">Date:</div><div class="info-value">{seminar_date or 'To be confirmed'}</div></div>
             </div>
             
             <form id="infoForm">
                 <div class="form-section">
                     <h3>Personal Information</h3>
+                    
+                    <div class="form-group">
+                        <label for="speakerName">Speaker Name *</label>
+                        <input type="text" id="speakerName" required placeholder="Your full name" value="{speaker_name}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="finalTalkTitle">Talk Title *</label>
+                        <input type="text" id="finalTalkTitle" required placeholder="Title of your presentation" value="{seminar_title or ''}">
+                    </div>
                     
                     <div class="form-row">
                         <div class="form-group">
@@ -763,19 +849,9 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                         <textarea id="abstract" rows="5" required placeholder="Abstract (150-300 words)..."></textarea>
                     </div>
                     
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="needsProjector" checked>
-                        <label for="needsProjector" style="margin: 0;">I need a projector</label>
-                    </div>
-                    
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="needsMicrophone">
-                        <label for="needsMicrophone" style="margin: 0;">I need a microphone</label>
-                    </div>
-                    
                     <div class="form-group">
                         <label for="specialRequirements">Special Requirements</label>
-                        <textarea id="specialRequirements" rows="2" placeholder="Any special equipment or setup needs..."></textarea>
+                        <textarea id="specialRequirements" rows="2" placeholder="Any special equipment or setup needs (projector, microphone, etc.)..."></textarea>
                     </div>
                 </div>
                 
@@ -822,21 +898,35 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
             <div id="message" class="message"></div>
         </div>
         <div class="um-footer">
-            <p>University of Macau · Faculty of Science and Technology · Department of Computer Science</p>
+            <p>University of Macau · Faculty of Social Sciences · Department of Economics</p>
             <p style="margin-top: 10px; font-size: 12px;">You can save your progress and return to this page using the same link.</p>
         </div>
     </div>
     
+    <div id="scriptStatus" style="position:fixed;top:10px;right:10px;background:#ff0;color:#000;padding:5px 10px;font-size:12px;z-index:10000;">Loading...</div>
+    
     <div class="save-indicator" id="saveIndicator">✓ Saved successfully!</div>
     
     <script>
-        // File upload handling
-        const uploadedFiles = {{}};
+        document.getElementById('scriptStatus').textContent = 'Script running...';
+        
+        try {{
+            debugLog('Second script starting...');
+            document.getElementById('scriptStatus').textContent = 'Second script started';
+            
+            // File upload handling
+            const uploadedFiles = {{}};
+            debugLog('uploadedFiles created');
         
         function setupFileUpload(inputId, containerId, category) {{
+            debugLog('setupFileUpload: ' + inputId + ', ' + containerId);
             const input = document.getElementById(inputId);
             const container = document.getElementById(containerId);
+            if (!input) {{ debugLog('ERROR: input not found: ' + inputId); return; }}
+            if (!container) {{ debugLog('ERROR: container not found: ' + containerId); return; }}
             const uploadArea = input.parentElement;
+            if (!uploadArea) {{ debugLog('ERROR: uploadArea not found'); return; }}
+            debugLog('Elements found, attaching listeners for ' + category);
             
             uploadArea.addEventListener('dragover', (e) => {{
                 e.preventDefault();
@@ -850,24 +940,91 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
             uploadArea.addEventListener('drop', (e) => {{
                 e.preventDefault();
                 uploadArea.classList.remove('dragover');
+                debugLog('Drop event for ' + category);
                 handleFiles(e.dataTransfer.files, container, category);
             }});
             
             input.addEventListener('change', (e) => {{
+                debugLog('Change event for ' + category + ', files: ' + (e.target.files ? e.target.files.length : 0));
                 handleFiles(e.target.files, container, category);
             }});
+            debugLog('Listeners attached for ' + category);
         }}
         
         function handleFiles(files, container, category) {{
+            debugLog('handleFiles: ' + files.length + ' files, cat=' + category);
             for (const file of files) {{
+                // Validate file size
+                const maxSize = category === 'photo' ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+                if (file.size > maxSize) {{
+                    debugLog('File too large: ' + file.name);
+                    alert('File too large: ' + file.name + '. Maximum size is ' + (maxSize / 1024 / 1024) + 'MB');
+                    continue;
+                }}
+                
                 const fileId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 uploadedFiles[fileId] = {{ file: file, category: category, uploaded: false }};
+                debugLog('Created file entry: ' + file.name);
                 
                 const fileEl = document.createElement('div');
                 fileEl.className = 'file-item';
                 fileEl.id = 'file_' + fileId;
-                fileEl.innerHTML = '<span class="file-name">' + file.name + '</span><span class="file-status">Ready to upload</span><span class="remove-file" onclick="removeFile(\'' + fileId + '\')">×</span>';
+                fileEl.innerHTML = '<span class="file-name">' + file.name + '</span><span class="file-status" id="status_' + fileId + '">Ready to upload</span><span class="remove-file" onclick="removeFile(\'' + fileId + '\')">×</span><div class="progress-bar" id="progress_' + fileId + '"><div class="progress-fill"></div></div>';
                 container.appendChild(fileEl);
+                
+                // Auto-upload the file
+                debugLog('Starting upload for: ' + file.name);
+                uploadSingleFile(fileId);
+            }}
+        }}
+        
+        async function uploadSingleFile(fileId) {{
+            debugLog('uploadSingleFile: ' + fileId);
+            const fileData = uploadedFiles[fileId];
+            if (!fileData) {{ debugLog('ERROR: No file data'); return; }}
+            if (fileData.uploaded) {{ debugLog('Already uploaded'); return; }}
+            
+            const statusEl = document.getElementById('status_' + fileId);
+            const progressEl = document.getElementById('progress_' + fileId);
+            const progressFill = progressEl.querySelector('.progress-fill');
+            
+            statusEl.textContent = 'Uploading...';
+            statusEl.style.color = '#0066CC';
+            progressEl.style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('file', fileData.file);
+            formData.append('category', fileData.category);
+            
+            debugLog('Sending upload for: ' + fileData.file.name);
+            try {{
+                const response = await fetch('/api/v1/seminars/speaker-tokens/{token}/upload', {{
+                    method: 'POST',
+                    body: formData
+                }});
+                
+                debugLog('Upload response: ' + response.status);
+                
+                if (response.ok) {{
+                    uploadedFiles[fileId].uploaded = true;
+                    statusEl.textContent = '✓ Uploaded';
+                    statusEl.style.color = '#4caf50';
+                    progressFill.style.width = '100%';
+                    progressFill.style.background = '#4caf50';
+                    setTimeout(() => {{ progressEl.style.display = 'none'; }}, 1000);
+                    debugLog('Upload success: ' + fileData.file.name);
+                }} else {{
+                    const errorData = await response.json().catch(() => ({{}}));
+                    debugLog('Upload failed: ' + (errorData.detail || response.status));
+                    statusEl.textContent = '✗ Failed: ' + (errorData.detail || 'Upload failed');
+                    statusEl.style.color = '#f44336';
+                    progressFill.style.background = '#f44336';
+                }}
+            }} catch (err) {{
+                debugLog('Upload error: ' + err.message);
+                statusEl.textContent = '✗ Error: Network error';
+                statusEl.style.color = '#f44336';
+                progressFill.style.background = '#f44336';
             }}
         }}
         
@@ -879,36 +1036,15 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
         
         async function uploadFiles() {{
             const fileIds = Object.keys(uploadedFiles).filter(id => !uploadedFiles[id].uploaded);
-            
             for (const fileId of fileIds) {{
-                const fileData = uploadedFiles[fileId];
-                const formData = new FormData();
-                formData.append('file', fileData.file);
-                formData.append('category', fileData.category);
-                
-                try {{
-                    const response = await fetch('/api/v1/seminars/seminars/{seminar_id or 0}/upload', {{
-                        method: 'POST',
-                        body: formData
-                    }});
-                    
-                    if (response.ok) {{
-                        uploadedFiles[fileId].uploaded = true;
-                        const el = document.getElementById('file_' + fileId);
-                        if (el) {{
-                            el.querySelector('.file-status').textContent = '✓ Uploaded';
-                            el.querySelector('.file-status').style.color = '#4caf50';
-                        }}
-                    }}
-                }} catch (err) {{
-                    console.error('Upload failed:', err);
-                }}
+                await uploadSingleFile(fileId);
             }}
         }}
         
         setupFileUpload('cvFile', 'cvFiles', 'cv');
         setupFileUpload('photoFile', 'photoFiles', 'photo');
         setupFileUpload('passportFile', 'passportFiles', 'passport');
+        debugLog('All upload handlers setup complete');
         
         document.getElementById('needsAccommodation').addEventListener('change', (e) => {{
             const datesDiv = document.getElementById('accommodationDates');
@@ -920,6 +1056,8 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
         
         function saveDraft() {{
             const formData = {{
+                speaker_name: document.getElementById('speakerName').value,
+                final_talk_title: document.getElementById('finalTalkTitle').value,
                 passport_number: document.getElementById('passportNumber').value,
                 passport_country: document.getElementById('passportCountry').value,
                 departure_city: document.getElementById('departureCity').value,
@@ -936,8 +1074,6 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                 currency: document.getElementById('currency').value,
                 talk_title: document.getElementById('talkTitle').value,
                 abstract: document.getElementById('abstract').value,
-                needs_projector: document.getElementById('needsProjector').checked,
-                needs_microphone: document.getElementById('needsMicrophone').checked,
                 special_requirements: document.getElementById('specialRequirements').value
             }};
             
@@ -956,6 +1092,8 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
             
             try {{
                 const data = JSON.parse(draft);
+                if (data.speaker_name) document.getElementById('speakerName').value = data.speaker_name;
+                if (data.final_talk_title) document.getElementById('finalTalkTitle').value = data.final_talk_title;
                 document.getElementById('passportNumber').value = data.passport_number || '';
                 document.getElementById('passportCountry').value = data.passport_country || '';
                 document.getElementById('departureCity').value = data.departure_city || '';
@@ -972,8 +1110,6 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                 document.getElementById('currency').value = data.currency || '';
                 document.getElementById('talkTitle').value = data.talk_title || '';
                 document.getElementById('abstract').value = data.abstract || '';
-                document.getElementById('needsProjector').checked = data.needs_projector !== false;
-                document.getElementById('needsMicrophone').checked = data.needs_microphone || false;
                 document.getElementById('specialRequirements').value = data.special_requirements || '';
                 
                 document.getElementById('needsAccommodation').dispatchEvent(new Event('change'));
@@ -987,14 +1123,30 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
         
         document.getElementById('infoForm').addEventListener('submit', async (e) => {{
             e.preventDefault();
+            debugLog('Form submission started');
             
             const btn = document.querySelector('.btn-submit');
             btn.disabled = true;
             btn.textContent = 'Submitting...';
             
-            await uploadFiles();
+            const msg = document.getElementById('message');
+            msg.style.display = 'block';
+            msg.className = 'message';
+            msg.innerHTML = 'Uploading files...';
+            
+            try {{
+                debugLog('About to call uploadFiles');
+                await uploadFiles();
+                debugLog('uploadFiles completed');
+                msg.innerHTML = 'Saving information...';
+            }} catch (uploadErr) {{
+                debugLog('Upload error: ' + uploadErr.message);
+                msg.innerHTML = 'Upload error: ' + uploadErr.message;
+            }}
             
             const data = {{
+                speaker_name: document.getElementById('speakerName').value,
+                final_talk_title: document.getElementById('finalTalkTitle').value,
                 passport_number: document.getElementById('passportNumber').value,
                 passport_country: document.getElementById('passportCountry').value,
                 departure_city: document.getElementById('departureCity').value,
@@ -1011,10 +1163,10 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                 currency: document.getElementById('currency').value,
                 talk_title: document.getElementById('talkTitle').value,
                 abstract: document.getElementById('abstract').value,
-                needs_projector: document.getElementById('needsProjector').checked,
-                needs_microphone: document.getElementById('needsMicrophone').checked,
                 special_requirements: document.getElementById('specialRequirements').value
             }};
+            
+            debugLog('Submitting data for: ' + data.speaker_name);
             
             try {{
                 const response = await fetch('/api/v1/seminars/speaker-tokens/{token}/submit-info', {{
@@ -1023,21 +1175,21 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                     body: JSON.stringify(data)
                 }});
                 
-                const msg = document.getElementById('message');
-                msg.style.display = 'block';
+                debugLog('Submit response: ' + response.status);
                 
                 if (response.ok) {{
                     msg.className = 'message success';
                     msg.innerHTML = '<strong>✅ Thank you!</strong><br>Your information has been submitted successfully.';
                     localStorage.removeItem('speaker_info_draft_{token}');
+                    debugLog('Submit successful');
                 }} else {{
                     const error = await response.text();
+                    debugLog('Submit failed: ' + error);
                     msg.className = 'message error';
                     msg.innerHTML = '<strong>❌ Error</strong><br>' + error;
                 }}
             }} catch (err) {{
-                const msg = document.getElementById('message');
-                msg.style.display = 'block';
+                debugLog('Network error: ' + err.message);
                 msg.className = 'message error';
                 msg.innerHTML = '<strong>❌ Network Error</strong><br>Please check your connection and try again.';
             }} finally {{
@@ -1045,6 +1197,11 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
                 btn.textContent = 'Submit Information';
             }}
         }});
+        
+        debugLog('Second script completed');
+    }} catch (e) {{
+        debugLog('FATAL ERROR in second script: ' + e.message);
+    }}
     </script>
 </body>
 </html>"""

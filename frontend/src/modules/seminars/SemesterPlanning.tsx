@@ -83,7 +83,10 @@ const deletePlan = async (planId: number) => {
   const response = await fetchWithAuth(`/api/v1/seminars/semester-plans/${planId}`, {
     method: 'DELETE',
   });
-  if (!response.ok) throw new Error('Failed to delete plan');
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error || 'Failed to delete plan');
+  }
   return response.json();
 };
 
@@ -91,7 +94,10 @@ const deleteSuggestion = async (suggestionId: number) => {
   const response = await fetchWithAuth(`/api/v1/seminars/speaker-suggestions/${suggestionId}`, {
     method: 'DELETE',
   });
-  if (!response.ok) throw new Error('Failed to delete suggestion');
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error || 'Failed to delete suggestion');
+  }
   return response.json();
 };
 
@@ -181,13 +187,19 @@ export function SemesterPlanning() {
       const response = await fetchWithAuth(`/api/v1/seminars/slots/${slotId}`, {
         method: 'DELETE',
       });
-      if (!response.ok) throw new Error('Failed to delete slot');
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || 'Failed to delete slot');
+      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['planning-board', selectedPlanId] });
       queryClient.invalidateQueries({ queryKey: ['seminars'] });
       queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
+    },
+    onError: (error: any) => {
+      alert(`Failed to delete slot: ${error.message}`);
     },
   });
 
@@ -197,12 +209,18 @@ export function SemesterPlanning() {
       queryClient.invalidateQueries({ queryKey: ['semester-plans'] });
       setSelectedPlanId(null);
     },
+    onError: (error: any) => {
+      alert(`Failed to delete plan: ${error.message}`);
+    },
   });
 
   const deleteSuggestionMutation = useMutation({
     mutationFn: deleteSuggestion,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['planning-board', selectedPlanId] });
+    },
+    onError: (error: any) => {
+      alert(`Failed to delete suggestion: ${error.message}`);
     },
   });
 

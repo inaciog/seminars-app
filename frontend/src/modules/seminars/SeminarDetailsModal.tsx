@@ -170,7 +170,8 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
       if (!response.ok) throw new Error('Failed to fetch details');
       return response.json();
     },
-    staleTime: Infinity,
+    staleTime: 0, // Always fetch fresh data when component mounts
+    refetchOnWindowFocus: true,
   });
 
   // Fetch uploaded files

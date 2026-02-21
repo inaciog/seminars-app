@@ -30,9 +30,25 @@ from app.logging_config import init_logging, log_audit, log_request
 
 # Import templates
 from app.templates import (
-    get_availability_page_html,
-    get_speaker_info_page_html,
     get_invalid_token_html
+)
+from app.availability_page import get_availability_page_html
+
+# Import new speaker info page
+from app.speaker_info_v2 import get_speaker_info_page_v2
+from app.speaker_info_v3 import get_speaker_info_page_v3
+from app.speaker_info_v4 import get_speaker_info_page_v4
+from app.speaker_info_v5 import get_speaker_info_page_v5
+from app.speaker_info_v6 import get_speaker_info_page_v6
+
+# Import robust deletion handlers
+from app.deletion_handlers import (
+    delete_speaker_robust,
+    delete_room_robust,
+    delete_seminar_robust,
+    delete_semester_plan_robust,
+    delete_slot_robust,
+    delete_suggestion_robust
 )
 
 # Initialize logging
@@ -185,6 +201,7 @@ class SeminarSlot(SQLModel, table=True):
     room: str
     status: str = Field(default="available")  # available, reserved, confirmed, cancelled
     assigned_seminar_id: Optional[int] = Field(default=None, foreign_key="seminars.id")
+    assigned_suggestion_id: Optional[int] = Field(default=None, foreign_key="speaker_suggestions.id")
     
     plan: SemesterPlan = Relationship(back_populates="slots")
     assigned_seminar: Optional[Seminar] = Relationship()
@@ -467,6 +484,29 @@ class SpeakerTokenVerifyRequest(BaseModel):
 class SpeakerAvailabilitySubmit(BaseModel):
     availabilities: List[SpeakerAvailabilityCreate]
 
+class SpeakerInfoSubmit(BaseModel):
+    speaker_name: Optional[str] = None
+    final_talk_title: Optional[str] = None
+    passport_number: Optional[str] = None
+    passport_country: Optional[str] = None
+    departure_city: Optional[str] = None
+    travel_method: Optional[str] = None
+    needs_accommodation: bool = True
+    check_in_date: Optional[date_type] = None
+    check_out_date: Optional[date_type] = None
+    payment_email: Optional[str] = None
+    beneficiary_name: Optional[str] = None
+    bank_name: Optional[str] = None
+    swift_code: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_address: Optional[str] = None
+    currency: Optional[str] = "USD"
+    talk_title: Optional[str] = None
+    abstract: Optional[str] = None
+    needs_projector: bool = True
+    needs_microphone: bool = False
+    special_requirements: Optional[str] = None
+
 class SeminarDetailsUpdate(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
@@ -603,6 +643,108 @@ async def require_auth(request: Request, call_next):
     return await call_next(request)
 
 # ============================================================================
+# Data Migration
+# ============================================================================
+
+async def run_data_migration(engine):
+    """Run safe data migration to add missing columns and relationships."""
+    from sqlalchemy import text
+    
+    logger.info("Running data migration...")
+    
+    with engine.connect() as conn:
+        # Add slot_id to seminars if not exists (without UNIQUE constraint first)
+        try:
+            conn.execute(text("ALTER TABLE seminars ADD COLUMN slot_id INTEGER"))
+            conn.commit()
+            logger.info("Added seminars.slot_id column")
+        except Exception as e:
+            if "duplicate column name" in str(e):
+                logger.info("seminars.slot_id already exists")
+            else:
+                logger.error(f"Error adding slot_id: {e}")
+        
+        # Add suggestion_id to seminars if not exists
+        try:
+            conn.execute(text("ALTER TABLE seminars ADD COLUMN suggestion_id INTEGER"))
+            conn.commit()
+            logger.info("Added seminars.suggestion_id column")
+        except Exception as e:
+            if "duplicate column name" in str(e):
+                logger.info("seminars.suggestion_id already exists")
+            else:
+                logger.error(f"Error adding suggestion_id: {e}")
+        
+        # Add assigned_suggestion_id to seminar_slots if not exists
+        try:
+            conn.execute(text("ALTER TABLE seminar_slots ADD COLUMN assigned_suggestion_id INTEGER"))
+            conn.commit()
+            logger.info("Added seminar_slots.assigned_suggestion_id column")
+        except Exception as e:
+            if "duplicate column name" in str(e):
+                logger.info("seminar_slots.assigned_suggestion_id already exists")
+            else:
+                logger.error(f"Error adding assigned_suggestion_id: {e}")
+        
+        # Migrate data: update seminars with slot_id from seminar_slots
+        try:
+            result = conn.execute(text("""
+                UPDATE seminars 
+                SET slot_id = (
+                    SELECT id FROM seminar_slots 
+                    WHERE assigned_seminar_id = seminars.id
+                )
+                WHERE slot_id IS NULL AND id IN (
+                    SELECT assigned_seminar_id FROM seminar_slots WHERE assigned_seminar_id IS NOT NULL
+                )
+            """))
+            conn.commit()
+            if result.rowcount > 0:
+                logger.info(f"Migrated {result.rowcount} seminars with slot_id")
+        except Exception as e:
+            logger.error(f"Error migrating slot_id: {e}")
+        
+        # Migrate data: update seminars with suggestion_id
+        try:
+            result = conn.execute(text("""
+                UPDATE seminars 
+                SET suggestion_id = (
+                    SELECT assigned_suggestion_id 
+                    FROM seminar_slots 
+                    WHERE assigned_seminar_id = seminars.id AND assigned_suggestion_id IS NOT NULL
+                )
+                WHERE suggestion_id IS NULL AND slot_id IS NOT NULL
+            """))
+            conn.commit()
+            if result.rowcount > 0:
+                logger.info(f"Migrated {result.rowcount} seminars with suggestion_id")
+        except Exception as e:
+            logger.error(f"Error migrating suggestion_id: {e}")
+        
+        # Try to match remaining seminars to suggestions by speaker_id
+        try:
+            result = conn.execute(text("""
+                UPDATE seminars 
+                SET suggestion_id = (
+                    SELECT ss.id 
+                    FROM speaker_suggestions ss
+                    JOIN seminar_slots sl ON sl.semester_plan_id = ss.semester_plan_id
+                    WHERE ss.speaker_id = seminars.speaker_id
+                    AND sl.id = seminars.slot_id
+                    AND ss.status = 'confirmed'
+                    LIMIT 1
+                )
+                WHERE suggestion_id IS NULL AND speaker_id IS NOT NULL AND slot_id IS NOT NULL
+            """))
+            conn.commit()
+            if result.rowcount > 0:
+                logger.info(f"Matched {result.rowcount} additional seminars to suggestions")
+        except Exception as e:
+            logger.error(f"Error matching suggestions: {e}")
+    
+    logger.info("Data migration complete")
+
+# ============================================================================
 # App Initialization
 # ============================================================================
 
@@ -614,6 +756,10 @@ async def lifespan(app: FastAPI):
     
     eng = get_engine()
     SQLModel.metadata.create_all(eng)
+    
+    # Run data migration
+    await run_data_migration(eng)
+    
     yield
 
 app = FastAPI(title="Seminars App", lifespan=lifespan)
@@ -814,11 +960,10 @@ async def speaker_availability_page(token: str, db: Session = Depends(get_db)):
 @app.get("/speaker/info/{token}", response_class=HTMLResponse)
 async def speaker_info_page(token: str, db: Session = Depends(get_db)):
     """Public page for speaker to submit detailed info."""
-    # Verify token
+    # Verify token - allow viewing even if used, but not expired
     statement = select(SpeakerToken).where(
         SpeakerToken.token == token,
         SpeakerToken.expires_at > datetime.utcnow(),
-        SpeakerToken.used_at.is_(None),
         SpeakerToken.token_type == "info"
     )
     db_token = db.exec(statement).first()
@@ -829,7 +974,7 @@ async def speaker_info_page(token: str, db: Session = Depends(get_db)):
     suggestion = db_token.suggestion
     seminar = db_token.seminar
     
-    return HTMLResponse(content=get_speaker_info_page_html(
+    return HTMLResponse(content=get_speaker_info_page_v6(
         speaker_name=suggestion.speaker_name,
         speaker_email=suggestion.speaker_email,
         speaker_affiliation=suggestion.speaker_affiliation,
@@ -838,6 +983,107 @@ async def speaker_info_page(token: str, db: Session = Depends(get_db)):
         token=token,
         seminar_id=seminar.id if seminar else None
     ))
+
+@app.get("/test-js", response_class=HTMLResponse)
+async def test_js_page():
+    """Simple test page for JavaScript debugging."""
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS Test</title>
+</head>
+<body>
+    <h1>JavaScript Test Page</h1>
+    <div id="status" style="background:#ff0;padding:10px;">Loading...</div>
+    <div id="log" style="margin-top:20px;font-family:monospace;"></div>
+    
+    <script>
+        function log(msg) {
+            document.getElementById('log').innerHTML += '<div>' + msg + '</div>';
+            document.getElementById('status').textContent = msg;
+        }
+        
+        log('Script 1 running');
+        
+        const testObj = {};
+        log('Object created');
+        
+        function testFunc() {
+            log('Function called');
+        }
+        
+        testFunc();
+        log('Script 1 complete');
+    </script>
+    
+    <p>Between scripts</p>
+    
+    <script>
+        log('Script 2 running');
+        document.getElementById('status').style.background = '#4caf50';
+        document.getElementById('status').style.color = '#fff';
+        log('All scripts complete - SUCCESS');
+    </script>
+</body>
+</html>""")
+
+
+@app.get("/test-speaker-info", response_class=HTMLResponse)
+async def test_speaker_info_page():
+    """Minimal test of speaker info page structure."""
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speaker Info Test</title>
+</head>
+<body>
+    <h1>Speaker Info Test</h1>
+    <div id="status" style="background:#ff0;padding:10px;">Loading...</div>
+    <div id="log" style="margin-top:20px;font-family:monospace;"></div>
+    
+    <form id="infoForm">
+        <input type="text" id="speakerName" value="Test Speaker">
+        <button type="submit">Submit</button>
+    </form>
+    
+    <script>
+        function log(msg) {
+            document.getElementById('log').innerHTML += '<div>' + msg + '</div>';
+            document.getElementById('status').textContent = msg;
+        }
+        
+        log('First script running');
+        
+        const uploadedFiles = {};
+        log('uploadedFiles created');
+        
+        function setupFileUpload() {
+            log('setupFileUpload called');
+        }
+        
+        setupFileUpload();
+        log('First script done');
+    </script>
+    
+    <script>
+        log('Second script running');
+        
+        document.getElementById('infoForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            log('Form submitted!');
+            alert('Form submitted!');
+        });
+        
+        log('Second script done - SUCCESS');
+        document.getElementById('status').style.background = '#4caf50';
+        document.getElementById('status').style.color = '#fff';
+    </script>
+</body>
+</html>""")
 
 # ============================================================================
 # API Routes - Speakers
@@ -878,13 +1124,10 @@ async def update_speaker(speaker_id: int, update: SpeakerCreate, db: Session = D
 
 @app.delete("/api/speakers/{speaker_id}")
 async def delete_speaker(speaker_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    speaker = db.get(Speaker, speaker_id)
-    if not speaker:
-        raise HTTPException(status_code=404, detail="Speaker not found")
-    
-    db.delete(speaker)
-    db.commit()
-    return {"success": True}
+    result = delete_speaker_robust(speaker_id, db)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 # Additional endpoints for frontend compatibility (/api/v1/seminars/*)
 @app.get("/api/v1/seminars/speakers", response_model=List[SpeakerResponse])
@@ -915,13 +1158,10 @@ async def update_speaker_v1(speaker_id: int, update: SpeakerCreate, db: Session 
 
 @app.delete("/api/v1/seminars/speakers/{speaker_id}")
 async def delete_speaker_v1(speaker_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    speaker = db.get(Speaker, speaker_id)
-    if not speaker:
-        raise HTTPException(status_code=404, detail="Speaker not found")
-    
-    db.delete(speaker)
-    db.commit()
-    return {"success": True}
+    result = delete_speaker_robust(speaker_id, db)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 # ============================================================================
 # API Routes - Rooms
@@ -942,13 +1182,10 @@ async def create_room(room: RoomCreate, db: Session = Depends(get_db), user: dic
 
 @app.delete("/api/rooms/{room_id}")
 async def delete_room(room_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    room = db.get(Room, room_id)
-    if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
-    
-    db.delete(room)
-    db.commit()
-    return {"success": True}
+    result = delete_room_robust(room_id, db)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 
 # ============================================================================
 # API Routes - Seminars
@@ -1002,13 +1239,10 @@ async def update_seminar(seminar_id: int, update: SeminarUpdate, db: Session = D
 
 @app.delete("/api/seminars/{seminar_id}")
 async def delete_seminar(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    seminar = db.get(Seminar, seminar_id)
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    
-    db.delete(seminar)
-    db.commit()
-    return {"success": True}
+    result = delete_seminar_robust(seminar_id, db)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 
 # Additional endpoints for frontend compatibility (/api/v1/seminars/*)
 @app.get("/api/v1/seminars/seminars", response_model=List[SeminarResponse])
@@ -1057,13 +1291,10 @@ async def update_seminar_v1(seminar_id: int, update: SeminarUpdate, db: Session 
 
 @app.delete("/api/v1/seminars/seminars/{seminar_id}")
 async def delete_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    seminar = db.get(Seminar, seminar_id)
-    if not seminar:
-        raise HTTPException(status_code=404, detail="Seminar not found")
-    
-    db.delete(seminar)
-    db.commit()
-    return {"success": True}
+    result = delete_seminar_robust(seminar_id, db)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 
 # Seminar details endpoints
 @app.get("/api/v1/seminars/seminars/{seminar_id}/details")
@@ -1240,26 +1471,10 @@ async def update_semester_plan(plan_id: int, update: SemesterPlanCreate, db: Ses
 
 @app.delete("/api/v1/seminars/semester-plans/{plan_id}")
 async def delete_semester_plan(plan_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    plan = db.get(SemesterPlan, plan_id)
-    if not plan:
-        raise HTTPException(status_code=404, detail="Semester plan not found")
-    
-    # Delete all related slots first
-    slots_stmt = select(SeminarSlot).where(SeminarSlot.semester_plan_id == plan_id)
-    slots = db.exec(slots_stmt).all()
-    for slot in slots:
-        db.delete(slot)
-    
-    # Delete all related suggestions
-    suggestions_stmt = select(SpeakerSuggestion).where(SpeakerSuggestion.semester_plan_id == plan_id)
-    suggestions = db.exec(suggestions_stmt).all()
-    for suggestion in suggestions:
-        db.delete(suggestion)
-    
-    # Now delete the plan
-    db.delete(plan)
-    db.commit()
-    return {"success": True, "deleted_slots": len(slots), "deleted_suggestions": len(suggestions)}
+    result = delete_semester_plan_robust(plan_id, db)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 
 # ============================================================================
 # API Routes - Seminar Slots
@@ -1293,13 +1508,10 @@ async def update_slot(slot_id: int, update: SeminarSlotCreate, db: Session = Dep
 
 @app.delete("/api/v1/seminars/slots/{slot_id}")
 async def delete_slot(slot_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    slot = db.get(SeminarSlot, slot_id)
-    if not slot:
-        raise HTTPException(status_code=404, detail="Slot not found")
-    
-    db.delete(slot)
-    db.commit()
-    return {"success": True}
+    result = delete_slot_robust(slot_id, db)
+    if not result["success"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
 
 @app.post("/api/v1/seminars/slots/{slot_id}/unassign")
 async def unassign_slot(slot_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
@@ -1421,6 +1633,14 @@ async def update_speaker_suggestion(suggestion_id: int, update: SpeakerSuggestio
         "created_at": suggestion.created_at,
         "availability": avail
     }
+
+@app.delete("/api/v1/seminars/speaker-suggestions/{suggestion_id}")
+async def delete_speaker_suggestion(suggestion_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Delete a speaker suggestion."""
+    result = delete_suggestion_robust(suggestion_id, db)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 # ============================================================================
 # API Routes - Speaker Tokens (for speaker access links)
@@ -1585,6 +1805,227 @@ async def submit_speaker_availability(
     
     return {"success": True, "message": "Availability submitted successfully"}
 
+@app.get("/api/v1/seminars/speaker-tokens/{token}/availability")
+async def get_speaker_availability_by_token(token: str, db: Session = Depends(get_db)):
+    """Get existing availability for a token."""
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'availability',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    # Get suggestion and availability
+    suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    
+    # Get availability entries
+    availability = []
+    for avail in suggestion.availability:
+        availability.append({
+            "date": avail.date.isoformat(),
+            "preference": avail.preference
+        })
+    
+    return {
+        "speaker_name": suggestion.speaker_name,
+        "suggested_topic": suggestion.suggested_topic,
+        "availability": availability,
+        "has_submitted": db_token.used_at is not None
+    }
+
+@app.post("/api/v1/seminars/speaker-tokens/{token}/submit-info")
+async def submit_speaker_info(
+    token: str,
+    data: SpeakerInfoSubmit,
+    db: Session = Depends(get_db)
+):
+    """Submit speaker information using a token."""
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'info',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    # Get or create seminar details
+    seminar_id = db_token.seminar_id
+    if not seminar_id:
+        # If no seminar_id in token, try to find one from the suggestion
+        suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+        if suggestion and suggestion.speaker_id:
+            # Find a seminar for this speaker
+            stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id)
+            seminar = db.exec(stmt).first()
+            if seminar:
+                seminar_id = seminar.id
+    
+    if not seminar_id:
+        raise HTTPException(status_code=400, detail="No seminar associated with this token")
+    
+    # Get or create seminar details
+    stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
+    details = db.exec(stmt).first()
+    
+    if not details:
+        details = SeminarDetails(seminar_id=seminar_id)
+        db.add(details)
+    
+    # Update fields
+    if data.passport_number is not None:
+        details.passport_number = data.passport_number
+    if data.passport_country is not None:
+        details.passport_country = data.passport_country
+    if data.departure_city is not None:
+        details.departure_city = data.departure_city
+    if data.travel_method is not None:
+        details.travel_method = data.travel_method
+    if data.needs_accommodation is not None:
+        details.needs_accommodation = data.needs_accommodation
+    if data.check_in_date is not None:
+        details.check_in_date = data.check_in_date
+    if data.check_out_date is not None:
+        details.check_out_date = data.check_out_date
+    if data.payment_email is not None:
+        details.payment_email = data.payment_email
+    if data.beneficiary_name is not None:
+        details.beneficiary_name = data.beneficiary_name
+    if data.bank_name is not None:
+        details.bank_name = data.bank_name
+    if data.swift_code is not None:
+        details.swift_code = data.swift_code
+    if data.bank_account_number is not None:
+        details.bank_account_number = data.bank_account_number
+    if data.bank_address is not None:
+        details.bank_address = data.bank_address
+    if data.currency is not None:
+        details.currency = data.currency
+    if data.special_requirements is not None:
+        details.beneficiary_address = data.special_requirements  # Using this field for special requirements
+    
+    details.updated_at = datetime.utcnow()
+    
+    # Update seminar title and abstract if provided
+    seminar = db.get(Seminar, seminar_id)
+    if seminar:
+        if data.final_talk_title:
+            seminar.title = data.final_talk_title
+        if data.abstract:
+            seminar.abstract = data.abstract
+        if data.talk_title:  # Fallback
+            seminar.title = data.talk_title
+    
+    # Update speaker name if provided
+    if data.speaker_name and seminar and seminar.speaker_id:
+        speaker = db.get(Speaker, seminar.speaker_id)
+        if speaker:
+            speaker.name = data.speaker_name
+    
+    db_token.used_at = datetime.utcnow()
+    db.commit()
+    
+    return {"success": True, "message": "Information submitted successfully"}
+
+@app.get("/api/v1/seminars/speaker-tokens/{token}/info")
+async def get_speaker_info_by_token(token: str, db: Session = Depends(get_db)):
+    """Get existing speaker information for a token."""
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'info',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    # Get suggestion - validate it exists
+    suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found - may have been deleted")
+    
+    # Get seminar from token
+    seminar_id = db_token.seminar_id
+    if not seminar_id:
+        # Try to find seminar by suggestion's speaker_id
+        if suggestion.speaker_id:
+            stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id)
+            seminar = db.exec(stmt).first()
+            if seminar:
+                seminar_id = seminar.id
+    
+    if not seminar_id:
+        # Return basic suggestion info if no seminar exists yet
+        return {
+            "speaker_name": suggestion.speaker_name,
+            "speaker_email": suggestion.speaker_email,
+            "speaker_affiliation": suggestion.speaker_affiliation,
+            "final_talk_title": suggestion.suggested_topic,
+            "has_submitted": db_token.used_at is not None
+        }
+    
+    # Get seminar and details
+    seminar = db.get(Seminar, seminar_id)
+    if not seminar:
+        # Seminar was deleted, return suggestion info
+        return {
+            "speaker_name": suggestion.speaker_name,
+            "speaker_email": suggestion.speaker_email,
+            "speaker_affiliation": suggestion.speaker_affiliation,
+            "final_talk_title": suggestion.suggested_topic,
+            "has_submitted": db_token.used_at is not None
+        }
+    
+    details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
+    details = db.exec(details_stmt).first()
+    
+    return {
+        "speaker_name": seminar.speaker.name if seminar.speaker else suggestion.speaker_name,
+        "final_talk_title": seminar.title if seminar else suggestion.suggested_topic,
+        "abstract": seminar.abstract if seminar else None,
+        "passport_number": details.passport_number if details else None,
+        "passport_country": details.passport_country if details else None,
+        "departure_city": details.departure_city if details else None,
+        "travel_method": details.travel_method if details else None,
+        "needs_accommodation": details.needs_accommodation if details else None,
+        "check_in_date": details.check_in_date.isoformat() if details and details.check_in_date else None,
+        "check_out_date": details.check_out_date.isoformat() if details and details.check_out_date else None,
+        "payment_email": details.payment_email if details else None,
+        "beneficiary_name": details.beneficiary_name if details else None,
+        "bank_name": details.bank_name if details else None,
+        "swift_code": details.swift_code if details else None,
+        "bank_account_number": details.bank_account_number if details else None,
+        "bank_address": details.bank_address if details else None,
+        "currency": details.currency if details else None,
+        "special_requirements": details.beneficiary_address if details else None,
+        "has_submitted": db_token.used_at is not None
+    }
+
+@app.post("/api/v1/seminars/speaker-tokens/{token}/finalize")
+async def finalize_speaker_info(token: str, db: Session = Depends(get_db)):
+    """Finalize speaker info submission - marks token as used."""
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'info',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    db_token.used_at = datetime.utcnow()
+    db.commit()
+    
+    return {"success": True, "message": "Submission finalized"}
+
 # ============================================================================
 # API Routes - Planning Board
 # ============================================================================
@@ -1619,7 +2060,8 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         if s.assigned_seminar_id:
             seminar = db.get(Seminar, s.assigned_seminar_id)
             if seminar:
-                assigned_suggestion_id = None
+                assigned_suggestion_id = s.assigned_suggestion_id  # Use stored value first
+                
                 # Access speaker through the relationship
                 try:
                     speaker_name = seminar.speaker.name if seminar.speaker else None
@@ -1631,25 +2073,26 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
                     if speaker:
                         slot_data["assigned_speaker_name"] = speaker.name
 
-                # Attach the matched suggestion id to make info-link generation reliable
-                for suggestion in suggestions:
-                    if suggestion.semester_plan_id != plan_id:
-                        continue
-                    if suggestion.status != "confirmed":
-                        continue
+                # If no stored suggestion_id, try to find by matching
+                if not assigned_suggestion_id:
+                    for suggestion in suggestions:
+                        if suggestion.semester_plan_id != plan_id:
+                            continue
+                        if suggestion.status != "confirmed":
+                            continue
 
-                    if seminar.speaker_id and suggestion.speaker_id and seminar.speaker_id == suggestion.speaker_id:
-                        assigned_suggestion_id = suggestion.id
-                        break
+                        if seminar.speaker_id and suggestion.speaker_id and seminar.speaker_id == suggestion.speaker_id:
+                            assigned_suggestion_id = suggestion.id
+                            break
 
-                    slot_speaker_name = slot_data.get("assigned_speaker_name")
-                    if (
-                        slot_speaker_name
-                        and suggestion.speaker_name
-                        and suggestion.speaker_name.strip().lower() == slot_speaker_name.strip().lower()
-                    ):
-                        assigned_suggestion_id = suggestion.id
-                        break
+                        slot_speaker_name = slot_data.get("assigned_speaker_name")
+                        if (
+                            slot_speaker_name
+                            and suggestion.speaker_name
+                            and suggestion.speaker_name.strip().lower() == slot_speaker_name.strip().lower()
+                        ):
+                            assigned_suggestion_id = suggestion.id
+                            break
 
                 if assigned_suggestion_id:
                     slot_data["assigned_suggestion_id"] = assigned_suggestion_id
@@ -1725,6 +2168,7 @@ async def assign_speaker_to_slot(
     
     # Assign seminar to slot
     slot.assigned_seminar_id = seminar.id
+    slot.assigned_suggestion_id = suggestion.id
     slot.status = "confirmed"
     suggestion.status = "confirmed"
     
@@ -1768,6 +2212,176 @@ def save_uploaded_file(file: UploadFile, seminar_id: int, category: Optional[str
     db.refresh(uploaded)
     
     return uploaded
+
+@app.post("/api/v1/seminars/speaker-tokens/{token}/upload")
+async def upload_file_with_token(
+    token: str,
+    file: UploadFile = File(...),
+    category: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """Upload file using a speaker token (no regular auth required)."""
+    # Verify token
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'info',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    # Get seminar_id from token or find it via suggestion
+    seminar_id = db_token.seminar_id
+    if not seminar_id:
+        suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+        if suggestion and suggestion.speaker_id:
+            stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id)
+            seminar = db.exec(stmt).first()
+            if seminar:
+                seminar_id = seminar.id
+    
+    if not seminar_id:
+        raise HTTPException(status_code=400, detail="No seminar associated with this token")
+    
+    uploaded = save_uploaded_file(file, seminar_id, category, db)
+    log_audit("FILE_UPLOAD", f"token:{token[:8]}", {"seminar_id": seminar_id, "file": file.filename, "category": category})
+    logger.info(f"File uploaded via token: {file.filename} for seminar {seminar_id}")
+    return {"success": True, "file_id": uploaded.id, "message": "File uploaded successfully"}
+
+@app.get("/api/v1/seminars/speaker-tokens/{token}/files")
+async def list_files_with_token(token: str, db: Session = Depends(get_db)):
+    """List files for a seminar using a speaker token (no regular auth required)."""
+    # Verify token
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'info',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    # Get seminar_id from token or find it via suggestion
+    seminar_id = db_token.seminar_id
+    if not seminar_id:
+        suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+        if suggestion and suggestion.speaker_id:
+            stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id)
+            seminar = db.exec(stmt).first()
+            if seminar:
+                seminar_id = seminar.id
+    
+    if not seminar_id:
+        return []  # No seminar yet, return empty list
+    
+    statement = select(UploadedFile).where(UploadedFile.seminar_id == seminar_id)
+    files = db.exec(statement).all()
+    
+    return [
+        {
+            "id": f.id,
+            "original_filename": f.original_filename,
+            "file_category": f.file_category,
+            "file_size": f.file_size,
+            "content_type": f.content_type,
+            "uploaded_at": f.uploaded_at.isoformat() if f.uploaded_at else None
+        }
+        for f in files
+    ]
+
+@app.get("/api/v1/seminars/speaker-tokens/{token}/files/{file_id}/download")
+async def download_file_with_token(token: str, file_id: int, db: Session = Depends(get_db)):
+    """Download a file using a speaker token (no regular auth required)."""
+    # Verify token
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'info',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    # Get seminar_id from token
+    seminar_id = db_token.seminar_id
+    if not seminar_id:
+        suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+        if suggestion and suggestion.speaker_id:
+            stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id)
+            seminar = db.exec(stmt).first()
+            if seminar:
+                seminar_id = seminar.id
+    
+    if not seminar_id:
+        raise HTTPException(status_code=404, detail="No seminar associated with this token")
+    
+    # Get file and verify it belongs to this seminar
+    file_record = db.get(UploadedFile, file_id)
+    if not file_record or file_record.seminar_id != seminar_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path = Path(settings.uploads_dir) / file_record.storage_filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    
+    log_audit("FILE_DOWNLOAD", f"token:{token[:8]}", {"file_id": file_id, "filename": file_record.original_filename})
+    logger.info(f"File downloaded via token: {file_record.original_filename}")
+    
+    return FileResponse(
+        path=file_path,
+        filename=file_record.original_filename,
+        media_type=file_record.content_type
+    )
+
+@app.delete("/api/v1/seminars/speaker-tokens/{token}/files/{file_id}")
+async def delete_file_with_token(token: str, file_id: int, db: Session = Depends(get_db)):
+    """Delete a file using a speaker token (no regular auth required)."""
+    # Verify token
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == 'info',
+        SpeakerToken.expires_at > datetime.utcnow()
+    )
+    db_token = db.exec(statement).first()
+    
+    if not db_token:
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+    
+    # Get seminar_id from token
+    seminar_id = db_token.seminar_id
+    if not seminar_id:
+        suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+        if suggestion and suggestion.speaker_id:
+            stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id)
+            seminar = db.exec(stmt).first()
+            if seminar:
+                seminar_id = seminar.id
+    
+    if not seminar_id:
+        raise HTTPException(status_code=404, detail="No seminar associated with this token")
+    
+    # Get file and verify it belongs to this seminar
+    file_record = db.get(UploadedFile, file_id)
+    if not file_record or file_record.seminar_id != seminar_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Delete from disk
+    file_path = Path(settings.uploads_dir) / file_record.storage_filename
+    if file_path.exists():
+        file_path.unlink()
+    
+    # Delete from database
+    db.delete(file_record)
+    db.commit()
+    
+    log_audit("FILE_DELETE", f"token:{token[:8]}", {"file_id": file_id, "filename": file_record.original_filename})
+    logger.info(f"File deleted via token: {file_record.original_filename}")
+    
+    return {"success": True, "message": "File deleted successfully"}
 
 @app.post("/api/seminars/{seminar_id}/files")
 async def upload_file(

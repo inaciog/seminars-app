@@ -112,7 +112,7 @@ const assignSpeaker = async (suggestionId: number, slotId: number) => {
 
 const unassignSpeaker = async (slotId: number) => {
   const response = await fetchWithAuth(`/api/v1/seminars/slots/${slotId}/unassign`, {
-    method: 'DELETE',
+    method: 'POST',
   });
   if (!response.ok) throw new Error('Failed to unassign speaker');
   return response.json();
@@ -172,6 +172,10 @@ export function SemesterPlanning() {
       queryClient.invalidateQueries({ queryKey: ['planning-board', selectedPlanId] });
       queryClient.invalidateQueries({ queryKey: ['seminars'] });
       queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
+    },
+    onError: (error) => {
+      console.error('Unassign failed:', error);
+      alert('Failed to unassign speaker: ' + error.message);
     },
   });
 
@@ -389,7 +393,9 @@ export function SemesterPlanning() {
                             }
                           }}
                           onUnassign={() => {
+                            console.log('onUnassign called for slot:', slot.id);
                             if (confirm('Unassign speaker from this slot?')) {
+                              console.log('Calling unassignMutation.mutate with slotId:', slot.id);
                               unassignMutation.mutate(slot.id);
                             }
                           }}
@@ -807,6 +813,7 @@ function SlotCard({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  console.log('Unassign clicked for slot:', slot.id, 'status:', slot.status, 'assigned_seminar_id:', slot.assigned_seminar_id);
                   onUnassign();
                 }}
                 className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
