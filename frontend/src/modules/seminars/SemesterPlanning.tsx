@@ -119,7 +119,7 @@ const assignSpeaker = async (suggestionId: number, slotId: number) => {
 
 const unassignSpeaker = async (slotId: number) => {
   const response = await fetchWithAuth(`/api/v1/seminars/slots/${slotId}/unassign`, {
-    method: 'DELETE',
+    method: 'POST',
   });
   if (!response.ok) throw new Error('Failed to unassign speaker');
   return response.json();
