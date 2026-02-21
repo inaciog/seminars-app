@@ -9,9 +9,14 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-# Ensure log directory exists
-LOG_DIR = Path("/data/logs")
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+# Log directory: use LOG_DIR env var, or /data/logs in production, or ./logs for dev/tests
+LOG_DIR = Path(os.environ.get("LOG_DIR", "/data/logs"))
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # Fallback for read-only /data (e.g. in tests)
+    LOG_DIR = Path("./logs")
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Main application log - rotates daily, keeps 180 days
 APP_LOG_FILE = LOG_DIR / "app.log"

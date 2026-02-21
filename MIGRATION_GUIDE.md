@@ -97,8 +97,8 @@ cp -r uploads/seminars/* seminars-app-uploads/ 2>/dev/null || echo "No uploads t
 ```bash
 cd /path/to/seminars-app
 
-# Initialize database
-python -c "from app.database import create_db_and_tables; create_db_and_tables()"
+# Initialize database (tables are created on first app startup)
+python -c "from app.main import get_engine; from sqlmodel import SQLModel; SQLModel.metadata.create_all(get_engine())"
 
 # Import data
 sqlite3 data/seminars.db < /path/to/inaciotool/seminars_export.sql

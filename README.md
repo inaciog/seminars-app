@@ -20,19 +20,15 @@ Seminar management system integrated with unified authentication.
 
 ## Environment Variables
 
-```env
-# Required
-JWT_SECRET=your-jwt-secret-from-auth-service
-API_SECRET=your-api-secret-for-dashboard
-DATABASE_URL=sqlite:////data/seminars.db
+See `.env.example` for a template. Key variables:
 
-# Optional
-UPLOADS_DIR=/data/uploads
-BACKUP_DIR=/data/backups
-DROPBOX_TOKEN=your-dropbox-token
-PORT=8080
-HOST=0.0.0.0
-```
+| Variable | Required | Description |
+|----------|----------|-------------|
+| JWT_SECRET | Yes | JWT secret from auth service |
+| API_SECRET | Yes | Secret for dashboard external API |
+| DATABASE_URL | Yes | Path (e.g. `/data/seminars.db`) or full URL (`sqlite:////data/seminars.db`) |
+| UPLOADS_DIR | No | Default `/data/uploads` |
+| MASTER_PASSWORD | No | For speaker token access (set via env in production) |
 
 ## API Endpoints
 
@@ -74,13 +70,32 @@ Backups run daily via cron:
 
 ## Development
 
+### Backend
+
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
+# Copy env template and configure
+cp .env.example .env
+
 # Run locally
 uvicorn app.main:app --reload
+```
 
-# Run tests
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend dev server runs on port 3000 and proxies `/api` to the backend (port 8000).
+
+### Tests
+
+```bash
+# Backend tests (uses test_seminars.db, created automatically)
 pytest
 ```

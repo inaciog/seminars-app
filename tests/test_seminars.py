@@ -5,38 +5,41 @@ Tests for seminars API.
 import pytest
 from datetime import date, timedelta
 
-from app.models import Seminar, SeminarStatus, Speaker
+from app.main import Seminar, Speaker, Room
 
 
 def test_list_seminars(client, auth_headers):
     """Test listing seminars."""
     response = client.get("/api/seminars", headers=auth_headers)
     assert response.status_code == 200
-    
+
     data = response.json()
     assert isinstance(data, list)
 
 
 def test_create_seminar(client, auth_headers, db_session):
     """Test creating a seminar."""
-    # Create speaker first
+    # Create speaker and room first
     speaker = Speaker(name="Test Speaker", email="test@example.com", affiliation="Test University")
+    room = Room(name="B-202")
     db_session.add(speaker)
+    db_session.add(room)
     db_session.commit()
-    
+    db_session.refresh(speaker)
+    db_session.refresh(room)
+
     seminar_data = {
         "title": "New Test Seminar",
         "date": (date.today() + timedelta(days=14)).isoformat(),
         "start_time": "14:00",
         "end_time": "15:30",
-        "room": "B-202",
+        "room_id": room.id,
         "speaker_id": speaker.id,
-        "status": "planned"
     }
-    
+
     response = client.post("/api/seminars", json=seminar_data, headers=auth_headers)
     assert response.status_code == 200
-    
+
     data = response.json()
     assert data["title"] == "New Test Seminar"
     assert "id" in data
@@ -44,68 +47,97 @@ def test_create_seminar(client, auth_headers, db_session):
 
 def test_get_seminar(client, auth_headers, db_session):
     """Test getting a specific seminar."""
-    # Create test seminar
+    speaker = Speaker(name="Test Speaker", email="test@example.com", affiliation="Test University")
+    room = Room(name="C-303")
+    db_session.add(speaker)
+    db_session.add(room)
+    db_session.commit()
+    db_session.refresh(speaker)
+    db_session.refresh(room)
+
     seminar = Seminar(
         title="Single Test Seminar",
         date=date.today() + timedelta(days=7),
         start_time="14:00",
         end_time="15:30",
-        room="C-303",
-        status=SeminarStatus.PLANNED
+        room_id=room.id,
+        speaker_id=speaker.id,
+        status="planned",
     )
     db_session.add(seminar)
     db_session.commit()
-    
+    db_session.refresh(seminar)
+
     response = client.get(f"/api/seminars/{seminar.id}", headers=auth_headers)
     assert response.status_code == 200
-    
+
     data = response.json()
     assert data["title"] == "Single Test Seminar"
 
 
 def test_update_seminar(client, auth_headers, db_session):
     """Test updating a seminar."""
-    # Create test seminar
+    speaker = Speaker(name="Test Speaker", email="test@example.com", affiliation="Test University")
+    room = Room(name="D-404")
+    db_session.add(speaker)
+    db_session.add(room)
+    db_session.commit()
+    db_session.refresh(speaker)
+    db_session.refresh(room)
+
     seminar = Seminar(
         title="Update Test Seminar",
         date=date.today() + timedelta(days=7),
         start_time="14:00",
         end_time="15:30",
-        room="D-404",
-        status=SeminarStatus.PLANNED
+        room_id=room.id,
+        speaker_id=speaker.id,
+        status="planned",
     )
     db_session.add(seminar)
     db_session.commit()
-    
+    db_session.refresh(seminar)
+
     updates = {
         "title": "Updated Title",
-        "room_booked": True
+        "room_booked": True,
     }
-    
-    response = client.patch(f"/api/seminars/{seminar.id}", json=updates, headers=auth_headers)
+
+    response = client.put(f"/api/seminars/{seminar.id}", json=updates, headers=auth_headers)
     assert response.status_code == 200
-    
+
     data = response.json()
     assert data["title"] == "Updated Title"
 
 
 def test_delete_seminar(client, auth_headers, db_session):
     """Test deleting a seminar."""
-    # Create test seminar
+    speaker = Speaker(name="Test Speaker", email="test@example.com", affiliation="Test University")
+    room = Room(name="E-505")
+    db_session.add(speaker)
+    db_session.add(room)
+    db_session.commit()
+    db_session.refresh(speaker)
+    db_session.refresh(room)
+
     seminar = Seminar(
         title="Delete Test Seminar",
         date=date.today() + timedelta(days=7),
         start_time="14:00",
         end_time="15:30",
-        room="E-505",
-        status=SeminarStatus.PLANNED
+        room_id=room.id,
+        speaker_id=speaker.id,
+        status="planned",
     )
     db_session.add(seminar)
     db_session.commit()
-    
-    response = client.delete(f"/api/seminars/{seminar.id}", headers=auth_headers)
+    db_session.refresh(seminar)
+    seminar_id = seminar.id
+
+    response = client.delete(f"/api/seminars/{seminar_id}", headers=auth_headers)
     assert response.status_code == 200
-    
-    # Verify deletion
-    deleted = db_session.get(Seminar, seminar.id)
+
+    # Verify deletion with fresh session
+    db_session.expire_all()
+    deleted = db_session.get(Seminar, seminar_id)
     assert deleted is None

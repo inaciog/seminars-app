@@ -1,0 +1,10 @@
+2026-02-21 23:29:54 | GET /api/external/stats | STATUS: 401 | TIME: 0.92ms | IP: testclient
+2026-02-21 23:30:13 | GET /api/external/stats | STATUS: 401 | TIME: 0.46ms | IP: testclient
+2026-02-21 23:30:51 | GET /api/external/stats | STATUS: 200 | TIME: 3.73ms | IP: testclient
+2026-02-21 23:30:51 | GET /api/external/upcoming | STATUS: 200 | TIME: 1.71ms | IP: testclient
+2026-02-21 23:30:51 | GET /api/external/stats | STATUS: 401 | TIME: 0.35ms | IP: testclient
+2026-02-21 23:30:51 | GET /api/seminars | STATUS: 200 | TIME: 1.38ms | USER: test-user | IP: testclient
+2026-02-21 23:30:51 | POST /api/seminars | STATUS: 200 | TIME: 2.71ms | USER: test-user | IP: testclient
+2026-02-21 23:30:51 | GET /api/seminars/3 | STATUS: 200 | TIME: 1.14ms | USER: test-user | IP: testclient
+2026-02-21 23:30:51 | PUT /api/seminars/4 | STATUS: 200 | TIME: 1.95ms | USER: test-user | IP: testclient
+2026-02-21 23:30:51 | DELETE /api/seminars/5 | STATUS: 200 | TIME: 3.80ms | USER: test-user | IP: testclient

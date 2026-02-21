@@ -34,11 +34,7 @@ from app.templates import (
 )
 from app.availability_page import get_availability_page_html
 
-# Import new speaker info page
-from app.speaker_info_v2 import get_speaker_info_page_v2
-from app.speaker_info_v3 import get_speaker_info_page_v3
-from app.speaker_info_v4 import get_speaker_info_page_v4
-from app.speaker_info_v5 import get_speaker_info_page_v5
+# Import speaker info page
 from app.speaker_info_v6 import get_speaker_info_page_v6
 
 # Import robust deletion handlers
@@ -62,7 +58,7 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     jwt_secret: str = "your-secret-key-change-in-production"
     api_secret: str = "your-api-secret-for-dashboard"
-    master_password: str = "i486983nacio:!"
+    master_password: str = ""  # Set via MASTER_PASSWORD env var for speaker token access
     database_url: str = "/data/seminars.db"
     uploads_dir: str = "/data/uploads"
     auth_service_url: str = "https://inacio-auth.fly.dev"
@@ -82,7 +78,12 @@ engine = None
 def get_engine():
     global engine
     if engine is None:
-        engine = create_engine(f"sqlite:///{settings.database_url}", connect_args={"check_same_thread": False})
+        db_url = settings.database_url
+        if db_url.startswith("sqlite://"):
+            url = db_url
+        else:
+            url = f"sqlite:///{db_url}"
+        engine = create_engine(url, connect_args={"check_same_thread": False})
     return engine
 
 class Speaker(SQLModel, table=True):
@@ -537,12 +538,6 @@ class SeminarDetailsUpdate(BaseModel):
             return date_type.fromisoformat(field_value)
         except ValueError:
             return None
-    departure_city: Optional[str] = None
-    travel_method: Optional[str] = None
-    estimated_travel_cost: Optional[str] = None
-    needs_accommodation: Optional[bool] = None
-    accommodation_nights: Optional[str] = None
-    estimated_hotel_cost: Optional[str] = None
 
 class SeminarDetailsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -750,10 +745,12 @@ async def run_data_migration(engine):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Path("/data").mkdir(parents=True, exist_ok=True)
-    Path("/data/uploads").mkdir(parents=True, exist_ok=True)
-    Path("/data/backups").mkdir(parents=True, exist_ok=True)
-    
+    try:
+        Path(settings.uploads_dir).mkdir(parents=True, exist_ok=True)
+        Path(settings.uploads_dir).parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass  # May fail in tests or read-only env; non-fatal for DB init
+
     eng = get_engine()
     SQLModel.metadata.create_all(eng)
     
@@ -793,8 +790,8 @@ async def log_requests(request: Request, call_next):
             token = auth_header[7:]
             payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
             user = payload.get("id", "unknown")
-    except:
-        pass
+    except (JWTError, ValueError):
+        pass  # Invalid or expired token - log without user
     
     # Log the request
     log_request(

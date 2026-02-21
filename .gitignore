@@ -21,6 +21,8 @@ data/
 *.db
 uploads/
 backups/
+test_uploads/
+test_seminars.db
 
 # IDE
 .vscode/
