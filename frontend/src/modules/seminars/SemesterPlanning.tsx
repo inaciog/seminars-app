@@ -145,6 +145,7 @@ export function SemesterPlanning() {
   const [generatedLink, setGeneratedLink] = useState<{link: string; speaker_name: string; linkType: 'availability' | 'info'} | null>(null);
   const [emailDraft, setEmailDraft] = useState<EmailDraftData | null>(null);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const [unassignModal, setUnassignModal] = useState<{ slotId: number; seminarId: number; seminarTitle: string } | null>(null);
   const queryClient = useQueryClient();
 
   const toggleNote = useCallback((id: string) => {
@@ -179,7 +180,21 @@ export function SemesterPlanning() {
       queryClient.invalidateQueries({ queryKey: ['planning-board', selectedPlanId] });
       queryClient.invalidateQueries({ queryKey: ['seminars'] });
       queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
+      queryClient.invalidateQueries({ queryKey: ['orphan-seminars'] });
+      setUnassignModal(null);
     },
+  });
+
+  const deleteSeminarMutation = useMutation({
+    mutationFn: (seminarId: number) => fetchWithAuth(`/api/v1/seminars/seminars/${seminarId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['planning-board', selectedPlanId] });
+      queryClient.invalidateQueries({ queryKey: ['seminars'] });
+      queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
+      queryClient.invalidateQueries({ queryKey: ['orphan-seminars'] });
+      setUnassignModal(null);
+    },
+    onError: (err: Error) => alert(err.message),
   });
 
   const deleteSlotMutation = useMutation({
@@ -408,8 +423,13 @@ export function SemesterPlanning() {
                             }
                           }}
                           onUnassign={() => {
-                            if (confirm('Unassign speaker from this slot?')) {
-                              unassignMutation.mutate(slot.id);
+                            if (slot.assigned_seminar_id) {
+                              const speakerName = slot.assigned_speaker_name || 'Speaker';
+                              setUnassignModal({
+                                slotId: slot.id,
+                                seminarId: slot.assigned_seminar_id,
+                                seminarTitle: `${slot.assigned_speaker_name || 'Seminar'} on ${new Date(slot.date).toLocaleDateString()}`,
+                              });
                             }
                           }}
                           onDelete={() => {
@@ -658,6 +678,42 @@ export function SemesterPlanning() {
           draft={emailDraft}
           onClose={() => setEmailDraft(null)}
         />
+      )}
+
+      {/* Unassign choice modal */}
+      {unassignModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Unassign speaker from slot</h3>
+            <p className="text-gray-600 mb-4">
+              What would you like to do with the seminar &quot;{unassignModal.seminarTitle}&quot;?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  deleteSeminarMutation.mutate(unassignModal.seminarId);
+                }}
+                disabled={deleteSeminarMutation.isPending}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                Delete seminar
+              </button>
+              <button
+                onClick={() => unassignMutation.mutate(unassignModal.slotId)}
+                disabled={unassignMutation.isPending}
+                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+              >
+                Keep for reassignment
+              </button>
+              <button
+                onClick={() => setUnassignModal(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

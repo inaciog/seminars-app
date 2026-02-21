@@ -15,7 +15,8 @@ import {
   Mail,
   Building2,
   Globe,
-  FileText
+  FileText,
+  MoreHorizontal
 } from 'lucide-react';
 import { seminarsApi, fetchWithAuth } from '@/api/client';
 import { formatDate, formatTime, cn } from '@/lib/utils';
@@ -167,7 +168,7 @@ function SpeakerModal({ speaker, onClose, onSave, isLoading }: SpeakerModalProps
 }
 
 export function SeminarsModule() {
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'speakers' | 'tasks' | 'planning'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'speakers' | 'tasks' | 'planning' | 'other'>('upcoming');
   const [speakerModalOpen, setSpeakerModalOpen] = useState(false);
   const [editingSpeaker, setEditingSpeaker] = useState<Speaker | null>(null);
   const [detailsSeminar, setDetailsSeminar] = useState<Seminar | null>(null);
@@ -212,8 +213,8 @@ export function SeminarsModule() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['seminars'] });
       queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
-      // Invalidate all planning-board queries to refresh slot assignments
       queryClient.invalidateQueries({ queryKey: ['planning-board'] });
+      queryClient.invalidateQueries({ queryKey: ['orphan-seminars'] });
     },
     onError: (error: any) => {
       alert(`Failed to delete seminar: ${error.message}`);
@@ -278,6 +279,7 @@ export function SeminarsModule() {
           { id: 'speakers', label: 'Speakers', icon: Users },
           { id: 'tasks', label: 'Pending Tasks', icon: AlertCircle },
           { id: 'planning', label: 'Semester Planning', icon: LayoutGrid },
+          { id: 'other', label: 'Other', icon: MoreHorizontal },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -426,6 +428,14 @@ export function SeminarsModule() {
 
       {activeTab === 'planning' && <SemesterPlanning />}
 
+      {activeTab === 'other' && (
+        <OtherTab
+          onViewDetails={setDetailsSeminar}
+          deleteSeminarMutation={deleteSeminarMutation}
+          queryClient={queryClient}
+        />
+      )}
+
       {/* Speaker Modal */}
       {speakerModalOpen && (
         <SpeakerModal
@@ -447,6 +457,197 @@ export function SeminarsModule() {
           onClose={() => setDetailsSeminar(null)}
         />
       )}
+    </div>
+  );
+}
+
+// Other tab - orphan seminars and future misc items
+function OtherTab({ 
+  onViewDetails, 
+  deleteSeminarMutation, 
+  queryClient 
+}: { 
+  onViewDetails: (s: Seminar) => void; 
+  deleteSeminarMutation: { mutate: (id: number) => void };
+  queryClient: ReturnType<typeof useQueryClient>;
+}) {
+  const [assigningOrphan, setAssigningOrphan] = useState<Seminar | null>(null);
+  
+  const { data: orphans = [], isLoading } = useQuery({
+    queryKey: ['orphan-seminars'],
+    queryFn: seminarsApi.listOrphanSeminars,
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: ({ seminarId, slotId }: { seminarId: number; slotId: number }) =>
+      seminarsApi.assignSeminarToSlot(seminarId, slotId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orphan-seminars'] });
+      queryClient.invalidateQueries({ queryKey: ['seminars'] });
+      queryClient.invalidateQueries({ queryKey: ['planning-board'] });
+      queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
+      setAssigningOrphan(null);
+    },
+    onError: (err: Error) => alert(err.message),
+  });
+
+  return (
+    <div className="space-y-8">
+      {/* Orphaned Seminars */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-900 mb-3">Orphaned Seminars</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Seminars not assigned to any slot. You can reassign them to a slot or delete them.
+        </p>
+        {isLoading ? (
+          <div className="text-center py-8 text-gray-500">Loading...</div>
+        ) : orphans.length === 0 ? (
+          <div className="p-6 bg-gray-50 rounded-xl text-center text-gray-500">
+            <p>No orphaned seminars</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {orphans.map((seminar: Seminar) => (
+              <div
+                key={seminar.id}
+                className="p-4 bg-white border border-gray-200 rounded-lg flex items-center justify-between hover:shadow-sm transition-shadow group"
+              >
+                <div 
+                  className="flex-1 cursor-pointer min-w-0"
+                  onClick={() => onViewDetails(seminar)}
+                >
+                  <h3 className="font-medium text-gray-900 truncate">{seminar.title}</h3>
+                  <p className="text-sm text-gray-600 mt-0.5">
+                    {seminar.speaker?.name || 'Unknown'} • {formatDate(seminar.date)} {seminar.start_time && `• ${formatTime(seminar.start_time)}`}
+                  </p>
+                </div>
+                <div className="flex gap-2 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => setAssigningOrphan(seminar)}
+                    className="px-3 py-1.5 text-sm font-medium text-primary-600 hover:bg-primary-50 rounded-lg"
+                  >
+                    Assign to slot
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete "${seminar.title}"?`)) {
+                        deleteSeminarMutation.mutate(seminar.id);
+                      }
+                    }}
+                    className="px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {assigningOrphan && (
+        <AssignToSlotModal
+          seminar={assigningOrphan}
+          onClose={() => setAssigningOrphan(null)}
+          onAssign={(slotId) => assignMutation.mutate({ seminarId: assigningOrphan.id, slotId })}
+          isAssigning={assignMutation.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
+function AssignToSlotModal({ 
+  seminar, 
+  onClose, 
+  onAssign, 
+  isAssigning 
+}: { 
+  seminar: Seminar; 
+  onClose: () => void; 
+  onAssign: (slotId: number) => void;
+  isAssigning: boolean;
+}) {
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  
+  const { data: plans = [] } = useQuery({
+    queryKey: ['semester-plans'],
+    queryFn: async () => {
+      const r = await fetchWithAuth('/api/v1/seminars/semester-plans');
+      if (!r.ok) throw new Error('Failed to fetch plans');
+      return r.json();
+    },
+  });
+
+  const { data: boardData } = useQuery({
+    queryKey: ['planning-board', selectedPlanId],
+    queryFn: async () => {
+      if (!selectedPlanId) return null;
+      const r = await fetchWithAuth(`/api/v1/seminars/semester-plans/${selectedPlanId}/planning-board`);
+      if (!r.ok) throw new Error('Failed to fetch board');
+      return r.json();
+    },
+    enabled: !!selectedPlanId,
+  });
+
+  const availableSlots = (boardData?.slots || []).filter(
+    (s: { assigned_seminar_id?: number }) => !s.assigned_seminar_id
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2 className="text-xl font-semibold">Assign to Slot</h2>
+            <p className="text-sm text-gray-600 mt-1">{seminar.title}</p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Select plan</label>
+            <select
+              value={selectedPlanId ?? ''}
+              onChange={(e) => setSelectedPlanId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="">Choose a plan...</option>
+              {plans.map((p: { id: number; name: string }) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          {selectedPlanId && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Available slots</label>
+              {availableSlots.length === 0 ? (
+                <p className="text-sm text-gray-500">No available slots in this plan</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {availableSlots.map((slot: { id: number; date: string; start_time: string; end_time: string; room: string }) => (
+                    <button
+                      key={slot.id}
+                      onClick={() => onAssign(slot.id)}
+                      disabled={isAssigning}
+                      className="w-full text-left px-4 py-2 border border-gray-200 rounded-lg hover:bg-primary-50 hover:border-primary-200 flex items-center gap-2"
+                    >
+                      <Calendar className="w-4 h-4 text-gray-500" />
+                      <span>{formatDate(slot.date)}</span>
+                      <span className="text-gray-500">•</span>
+                      <span>{slot.start_time}–{slot.end_time}</span>
+                      <span className="text-gray-500">•</span>
+                      <span>{slot.room}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

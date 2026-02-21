@@ -462,6 +462,11 @@ class AssignSpeakerRequest(BaseModel):
     suggestion_id: int
     slot_id: int
 
+class AssignSeminarRequest(BaseModel):
+    """Assign an existing seminar (e.g. orphan) to a slot."""
+    seminar_id: int
+    slot_id: int
+
 class SpeakerTokenCreate(BaseModel):
     suggestion_id: int
     token_type: str  # 'availability' or 'info'
@@ -1194,6 +1199,7 @@ async def delete_room(room_id: int, db: Session = Depends(get_db), user: dict = 
 @app.get("/api/seminars", response_model=List[SeminarResponse])
 async def list_seminars(
     upcoming: bool = False,
+    in_plan_only: bool = False,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
@@ -1202,6 +1208,13 @@ async def list_seminars(
     if upcoming:
         today = date_type.today()
         statement = statement.where(Seminar.date >= today)
+    
+    if in_plan_only:
+        # Only seminars that are assigned to a slot in a semester plan
+        assigned_subq = select(SeminarSlot.assigned_seminar_id).where(
+            SeminarSlot.assigned_seminar_id.isnot(None)
+        ).distinct()
+        statement = statement.where(Seminar.id.in_(assigned_subq))
     
     return db.exec(statement).all()
 
@@ -1248,6 +1261,8 @@ async def delete_seminar(seminar_id: int, db: Session = Depends(get_db), user: d
 @app.get("/api/v1/seminars/seminars", response_model=List[SeminarResponse])
 async def list_seminars_v1(
     upcoming: bool = False,
+    in_plan_only: bool = False,
+    orphaned: bool = False,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
@@ -1256,6 +1271,19 @@ async def list_seminars_v1(
     if upcoming:
         today = date_type.today()
         statement = statement.where(Seminar.date >= today)
+    
+    if in_plan_only:
+        # Only seminars that are assigned to a slot in a semester plan
+        assigned_subq = select(SeminarSlot.assigned_seminar_id).where(
+            SeminarSlot.assigned_seminar_id.isnot(None)
+        ).distinct()
+        statement = statement.where(Seminar.id.in_(assigned_subq))
+    elif orphaned:
+        # Only seminars NOT assigned to any slot (orphans)
+        assigned_subq = select(SeminarSlot.assigned_seminar_id).where(
+            SeminarSlot.assigned_seminar_id.isnot(None)
+        ).distinct()
+        statement = statement.where(~Seminar.id.in_(assigned_subq))
     
     return db.exec(statement).all()
 
@@ -2189,6 +2217,37 @@ async def assign_speaker_to_slot(
     slot.assigned_suggestion_id = suggestion.id
     slot.status = "confirmed"
     suggestion.status = "confirmed"
+    
+    db.commit()
+    return {"success": True, "seminar_id": seminar.id}
+
+@app.post("/api/v1/seminars/planning/assign-seminar")
+async def assign_seminar_to_slot(
+    request: AssignSeminarRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Assign an existing seminar (e.g. orphan) to an empty slot."""
+    slot = db.get(SeminarSlot, request.slot_id)
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if slot.assigned_seminar_id:
+        raise HTTPException(status_code=400, detail="Slot already has an assigned seminar")
+    
+    seminar = db.get(Seminar, request.seminar_id)
+    if not seminar:
+        raise HTTPException(status_code=404, detail="Seminar not found")
+    
+    # Update seminar to match slot date/time
+    seminar.date = slot.date
+    seminar.start_time = slot.start_time
+    seminar.end_time = slot.end_time
+    seminar.updated_at = datetime.utcnow()
+    
+    # Assign to slot
+    slot.assigned_seminar_id = seminar.id
+    slot.assigned_suggestion_id = None  # No suggestion for reassigned orphans
+    slot.status = "confirmed"
     
     db.commit()
     return {"success": True, "seminar_id": seminar.id}

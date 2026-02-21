@@ -87,7 +87,25 @@ export const fetchWithAuth = async (url: string, options: RequestInit = {}): Pro
 
 // Seminars API - adapted for standalone seminars backend
 export const seminarsApi = {
-  listSeminars: () => api.get('/seminars').then(r => r.data),
+  listSeminars: (params?: { upcoming?: boolean; in_plan_only?: boolean; orphaned?: boolean }) =>
+    api.get('/seminars', { params: { upcoming: true, in_plan_only: true, ...params } }).then(r => r.data),
+  listOrphanSeminars: async () => {
+    const r = await fetchWithAuth('/api/v1/seminars/seminars?orphaned=true');
+    if (!r.ok) throw new Error('Failed to fetch orphan seminars');
+    return r.json();
+  },
+  assignSeminarToSlot: async (seminarId: number, slotId: number) => {
+    const r = await fetchWithAuth('/api/v1/seminars/planning/assign-seminar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seminar_id: seminarId, slot_id: slotId }),
+    });
+    if (!r.ok) {
+      const err = await r.text();
+      throw new Error(err || 'Failed to assign seminar');
+    }
+    return r.json();
+  },
   listSpeakers: () => api.get('/speakers').then(r => r.data),
   createSeminar: (data: any) => api.post('/seminars', data),
   updateSeminar: (id: number, data: any) => api.put(`/seminars/${id}`, data),
@@ -117,8 +135,8 @@ export const seminarsApi = {
   addSpeakerAvailability: (suggestionId: number, availabilities: any[]) => Promise.resolve({}),
   assignSpeakerToSlot: (suggestionId: number, slotId: number) => Promise.resolve({}),
   
-  // Bureaucracy check - simplified
-  checkBureaucracy: () => api.get('/seminars').then(r => {
+  // Bureaucracy check - simplified (uses same seminar list as upcoming tab)
+  checkBureaucracy: () => api.get('/seminars', { params: { upcoming: true, in_plan_only: true } }).then(r => {
     const seminars = r.data || [];
     const today = new Date();
     const pendingTasks = [];
