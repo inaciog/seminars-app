@@ -88,7 +88,7 @@ export const fetchWithAuth = async (url: string, options: RequestInit = {}): Pro
 // Seminars API - adapted for standalone seminars backend
 export const seminarsApi = {
   listSeminars: (params?: { upcoming?: boolean; in_plan_only?: boolean; orphaned?: boolean }) =>
-    api.get('/seminars', { params: { upcoming: true, in_plan_only: true, ...params } }).then(r => r.data),
+    api.get('/seminars', { params: { upcoming: true, ...params } }).then(r => r.data),
   listOrphanSeminars: async () => {
     const r = await fetchWithAuth('/api/v1/seminars/seminars?orphaned=true');
     if (!r.ok) throw new Error('Failed to fetch orphan seminars');
@@ -136,7 +136,7 @@ export const seminarsApi = {
   assignSpeakerToSlot: (suggestionId: number, slotId: number) => Promise.resolve({}),
   
   // Bureaucracy check - simplified (uses same seminar list as upcoming tab)
-  checkBureaucracy: () => api.get('/seminars', { params: { upcoming: true, in_plan_only: true } }).then(r => {
+  checkBureaucracy: () => api.get('/seminars', { params: { upcoming: true } }).then(r => {
     const seminars = r.data || [];
     const today = new Date();
     const pendingTasks = [];
