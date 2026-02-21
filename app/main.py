@@ -492,21 +492,24 @@ class SpeakerInfoSubmit(BaseModel):
     passport_country: Optional[str] = None
     departure_city: Optional[str] = None
     travel_method: Optional[str] = None
+    estimated_travel_cost: Optional[str] = None  # From form; parsed to float in handler
     needs_accommodation: bool = True
     check_in_date: Optional[date_type] = None
     check_out_date: Optional[date_type] = None
+    accommodation_nights: Optional[str] = None  # From form; parsed to int in handler
+    estimated_hotel_cost: Optional[str] = None  # From form; parsed to float in handler
     payment_email: Optional[str] = None
     beneficiary_name: Optional[str] = None
     bank_name: Optional[str] = None
     swift_code: Optional[str] = None
     bank_account_number: Optional[str] = None
     bank_address: Optional[str] = None
+    beneficiary_address: Optional[str] = None
     currency: Optional[str] = "USD"
     talk_title: Optional[str] = None
     abstract: Optional[str] = None
     needs_projector: bool = True
     needs_microphone: bool = False
-    special_requirements: Optional[str] = None
 
 class SeminarDetailsUpdate(BaseModel):
     title: Optional[str] = None
@@ -1875,7 +1878,7 @@ async def submit_speaker_info(
         details = SeminarDetails(seminar_id=seminar_id)
         db.add(details)
     
-    # Update fields
+    # Update fields (must match SeminarDetails model and internal modal)
     if data.passport_number is not None:
         details.passport_number = data.passport_number
     if data.passport_country is not None:
@@ -1884,12 +1887,27 @@ async def submit_speaker_info(
         details.departure_city = data.departure_city
     if data.travel_method is not None:
         details.travel_method = data.travel_method
+    if data.estimated_travel_cost is not None and str(data.estimated_travel_cost).strip():
+        try:
+            details.estimated_travel_cost = float(data.estimated_travel_cost)
+        except (ValueError, TypeError):
+            pass
     if data.needs_accommodation is not None:
         details.needs_accommodation = data.needs_accommodation
     if data.check_in_date is not None:
         details.check_in_date = data.check_in_date
     if data.check_out_date is not None:
         details.check_out_date = data.check_out_date
+    if data.accommodation_nights is not None and str(data.accommodation_nights).strip():
+        try:
+            details.accommodation_nights = int(float(data.accommodation_nights))
+        except (ValueError, TypeError):
+            pass
+    if data.estimated_hotel_cost is not None and str(data.estimated_hotel_cost).strip():
+        try:
+            details.estimated_hotel_cost = float(data.estimated_hotel_cost)
+        except (ValueError, TypeError):
+            pass
     if data.payment_email is not None:
         details.payment_email = data.payment_email
     if data.beneficiary_name is not None:
@@ -1902,10 +1920,10 @@ async def submit_speaker_info(
         details.bank_account_number = data.bank_account_number
     if data.bank_address is not None:
         details.bank_address = data.bank_address
+    if data.beneficiary_address is not None:
+        details.beneficiary_address = data.beneficiary_address
     if data.currency is not None:
         details.currency = data.currency
-    if data.special_requirements is not None:
-        details.beneficiary_address = data.special_requirements  # Using this field for special requirements
     
     details.updated_at = datetime.utcnow()
     
@@ -1991,17 +2009,20 @@ async def get_speaker_info_by_token(token: str, db: Session = Depends(get_db)):
         "passport_country": details.passport_country if details else None,
         "departure_city": details.departure_city if details else None,
         "travel_method": details.travel_method if details else None,
+        "estimated_travel_cost": details.estimated_travel_cost if details else None,
         "needs_accommodation": details.needs_accommodation if details else None,
         "check_in_date": details.check_in_date.isoformat() if details and details.check_in_date else None,
         "check_out_date": details.check_out_date.isoformat() if details and details.check_out_date else None,
+        "accommodation_nights": details.accommodation_nights if details else None,
+        "estimated_hotel_cost": details.estimated_hotel_cost if details else None,
         "payment_email": details.payment_email if details else None,
         "beneficiary_name": details.beneficiary_name if details else None,
         "bank_name": details.bank_name if details else None,
         "swift_code": details.swift_code if details else None,
         "bank_account_number": details.bank_account_number if details else None,
         "bank_address": details.bank_address if details else None,
+        "beneficiary_address": details.beneficiary_address if details else None,
         "currency": details.currency if details else None,
-        "special_requirements": details.beneficiary_address if details else None,
         "has_submitted": db_token.used_at is not None
     }
 

@@ -8,3 +8,19 @@
 2026-02-21 23:30:51 | GET /api/seminars/3 | STATUS: 200 | TIME: 1.14ms | USER: test-user | IP: testclient
 2026-02-21 23:30:51 | PUT /api/seminars/4 | STATUS: 200 | TIME: 1.95ms | USER: test-user | IP: testclient
 2026-02-21 23:30:51 | DELETE /api/seminars/5 | STATUS: 200 | TIME: 3.80ms | USER: test-user | IP: testclient
+2026-02-21 23:40:46 | GET /api/external/stats | STATUS: 200 | TIME: 2.47ms | IP: testclient
+2026-02-21 23:40:46 | GET /api/external/upcoming | STATUS: 200 | TIME: 4.18ms | IP: testclient
+2026-02-21 23:40:46 | GET /api/external/stats | STATUS: 401 | TIME: 0.38ms | IP: testclient
+2026-02-21 23:40:46 | GET /api/seminars | STATUS: 200 | TIME: 2.15ms | USER: test-user | IP: testclient
+2026-02-21 23:40:46 | POST /api/seminars | STATUS: 200 | TIME: 2.09ms | USER: test-user | IP: testclient
+2026-02-21 23:40:46 | GET /api/seminars/7 | STATUS: 200 | TIME: 1.38ms | USER: test-user | IP: testclient
+2026-02-21 23:40:46 | PUT /api/seminars/8 | STATUS: 200 | TIME: 1.78ms | USER: test-user | IP: testclient
+2026-02-21 23:40:46 | DELETE /api/seminars/9 | STATUS: 200 | TIME: 3.51ms | USER: test-user | IP: testclient
+2026-02-21 23:40:50 | GET /api/external/stats | STATUS: 200 | TIME: 3.73ms | IP: testclient
+2026-02-21 23:40:50 | GET /api/external/upcoming | STATUS: 200 | TIME: 1.67ms | IP: testclient
+2026-02-21 23:40:50 | GET /api/external/stats | STATUS: 401 | TIME: 0.36ms | IP: testclient
+2026-02-21 23:40:50 | GET /api/seminars | STATUS: 200 | TIME: 1.31ms | USER: test-user | IP: testclient
+2026-02-21 23:40:50 | POST /api/seminars | STATUS: 200 | TIME: 2.64ms | USER: test-user | IP: testclient
+2026-02-21 23:40:50 | GET /api/seminars/3 | STATUS: 200 | TIME: 1.09ms | USER: test-user | IP: testclient
+2026-02-21 23:40:50 | PUT /api/seminars/4 | STATUS: 200 | TIME: 1.91ms | USER: test-user | IP: testclient
+2026-02-21 23:40:50 | DELETE /api/seminars/5 | STATUS: 200 | TIME: 3.34ms | USER: test-user | IP: testclient

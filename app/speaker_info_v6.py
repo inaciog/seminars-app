@@ -457,6 +457,11 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                         </div>
                     </div>
                     
+                    <div class="form-group">
+                        <label class="form-label">Estimated Travel Cost</label>
+                        <input type="number" id="estimatedTravelCost" class="form-input" placeholder="e.g. 500" step="0.01" min="0">
+                    </div>
+                    
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Passport Number</label>
@@ -501,6 +506,11 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                         <div class="form-group">
                             <label class="form-label">Number of Nights <span style="font-weight: normal; color: var(--gray-600);">(auto-calculated)</span></label>
                             <input type="number" id="accommodationNights" class="form-input" readonly style="background: var(--gray-100);">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Estimated Hotel Cost</label>
+                            <input type="number" id="estimatedHotelCost" class="form-input" placeholder="e.g. 200" step="0.01" min="0">
                         </div>
                     </div>
                 </div>
@@ -710,20 +720,24 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
             if (data.passport_country) document.getElementById('passportCountry').value = data.passport_country;
             if (data.departure_city) document.getElementById('departureCity').value = data.departure_city;
             if (data.travel_method) document.getElementById('travelMethod').value = data.travel_method;
+            if (data.estimated_travel_cost != null) document.getElementById('estimatedTravelCost').value = data.estimated_travel_cost;
             if (data.needs_accommodation) {{
                 document.getElementById('needsAccommodation').checked = true;
                 document.getElementById('accommodationFields').style.display = 'block';
             }}
             if (data.check_in_date) document.getElementById('checkInDate').value = data.check_in_date;
             if (data.check_out_date) document.getElementById('checkOutDate').value = data.check_out_date;
-            if (data.accommodation_nights) document.getElementById('accommodationNights').value = data.accommodation_nights;
+            if (data.accommodation_nights != null) document.getElementById('accommodationNights').value = data.accommodation_nights;
+            if (data.estimated_hotel_cost != null) document.getElementById('estimatedHotelCost').value = data.estimated_hotel_cost;
             if (data.payment_email) document.getElementById('paymentEmail').value = data.payment_email;
             if (data.beneficiary_name) document.getElementById('beneficiaryName').value = data.beneficiary_name;
             if (data.bank_name) document.getElementById('bankName').value = data.bank_name;
-            if (data.beneficiary_address) document.getElementById('bankAddress').value = data.beneficiary_address;
+            if (data.bank_address) document.getElementById('bankAddress').value = data.bank_address;
             if (data.swift_code) document.getElementById('swiftCode').value = data.swift_code;
             if (data.bank_account_number) document.getElementById('bankAccount').value = data.bank_account_number;
             if (data.currency) document.getElementById('currency').value = data.currency;
+            if (data.beneficiary_address) document.getElementById('beneficiaryAddress').value = data.beneficiary_address;
+            calculateNights();
         }}
         
         function setupAutoSave() {{
@@ -807,10 +821,12 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                 passport_country: document.getElementById('passportCountry').value,
                 departure_city: document.getElementById('departureCity').value,
                 travel_method: document.getElementById('travelMethod').value,
+                estimated_travel_cost: document.getElementById('estimatedTravelCost').value || null,
                 needs_accommodation: document.getElementById('needsAccommodation').checked,
                 check_in_date: document.getElementById('checkInDate').value || null,
                 check_out_date: document.getElementById('checkOutDate').value || null,
                 accommodation_nights: document.getElementById('accommodationNights').value || null,
+                estimated_hotel_cost: document.getElementById('estimatedHotelCost').value || null,
                 payment_email: document.getElementById('paymentEmail').value,
                 beneficiary_name: document.getElementById('beneficiaryName').value,
                 bank_name: document.getElementById('bankName').value,
@@ -818,7 +834,7 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                 swift_code: document.getElementById('swiftCode').value,
                 bank_account_number: document.getElementById('bankAccount').value,
                 currency: document.getElementById('currency').value,
-                special_requirements: document.getElementById('bankAddress').value
+                beneficiary_address: document.getElementById('beneficiaryAddress').value
             }};
         }}
         

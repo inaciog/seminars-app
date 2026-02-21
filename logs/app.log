@@ -18,3 +18,27 @@
 2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars/3 "HTTP/1.1 200 OK"
 2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: PUT http://testserver/api/seminars/4 "HTTP/1.1 200 OK"
 2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: DELETE http://testserver/api/seminars/5 "HTTP/1.1 200 OK"
+2026-02-21 23:40:46 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-21 23:40:46 | WARNING  | app.main | <module>:817 | Frontend assets directory not found at startup: frontend/dist/assets
+2026-02-21 23:40:46 | WARNING  | app.main | get_current_user:606 | Authentication failed: No token provided - GET /api/seminars
+2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=your-api-secret-for-dashboard "HTTP/1.1 200 OK"
+2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/upcoming?secret=your-api-secret-for-dashboard&limit=5 "HTTP/1.1 200 OK"
+2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=invalid-secret "HTTP/1.1 401 Unauthorized"
+2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars "HTTP/1.1 200 OK"
+2026-02-21 23:40:46 | INFO     | app.main | create_seminar:1215 | Seminar created: New Test Seminar (ID: 6) by test-user
+2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: POST http://testserver/api/seminars "HTTP/1.1 200 OK"
+2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars/7 "HTTP/1.1 200 OK"
+2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: PUT http://testserver/api/seminars/8 "HTTP/1.1 200 OK"
+2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: DELETE http://testserver/api/seminars/9 "HTTP/1.1 200 OK"
+2026-02-21 23:40:49 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-21 23:40:49 | WARNING  | app.main | <module>:817 | Frontend assets directory not found at startup: frontend/dist/assets
+2026-02-21 23:40:49 | WARNING  | app.main | get_current_user:606 | Authentication failed: No token provided - GET /api/seminars
+2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=your-api-secret-for-dashboard "HTTP/1.1 200 OK"
+2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/upcoming?secret=your-api-secret-for-dashboard&limit=5 "HTTP/1.1 200 OK"
+2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=invalid-secret "HTTP/1.1 401 Unauthorized"
+2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars "HTTP/1.1 200 OK"
+2026-02-21 23:40:50 | INFO     | app.main | create_seminar:1215 | Seminar created: New Test Seminar (ID: 2) by test-user
+2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: POST http://testserver/api/seminars "HTTP/1.1 200 OK"
+2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars/3 "HTTP/1.1 200 OK"
+2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: PUT http://testserver/api/seminars/4 "HTTP/1.1 200 OK"
+2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: DELETE http://testserver/api/seminars/5 "HTTP/1.1 200 OK"
