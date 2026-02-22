@@ -1,0 +1,38 @@
+name: Daily Backup
+
+on:
+  schedule:
+    # Run daily at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Run Backup
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          echo "Running backup on Fly.io..."
+          flyctl ssh console --app seminars-app -C "/app/backup.sh" || {
+            echo "Backup failed"
+            exit 1
+          }
+          echo "Backup completed"
+
+      - name: Check Backup Status
+        if: success()
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # List recent backups
+          flyctl ssh console --app seminars-app -C "ls -lh /data/backups/*.tar.gz | tail -5"
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "Backup failed! Check Fly.io logs: fly logs --app seminars-app"

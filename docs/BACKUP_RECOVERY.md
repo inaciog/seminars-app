@@ -26,31 +26,56 @@ This document describes the backup strategy, automated backup procedures, and re
    - **recovery.html** — Human-readable backup: full seminar content (abstract, speaker, logistics), speaker bios, suggestions. Use for emergency recovery.
    - **changelog.html** — Technical tracking: plans, slots, activity, files.
    - **index.html** — Entry point with links to both.
-   - Updated after state-changing operations; kept in-repo as a safety fallback when the app UI/API is unavailable.
+   - Backed up as `seminars_mirror_YYYYMMDD_HHMMSS.tar.gz` and uploaded to Dropbox for offsite access
 
 ### Backup Schedule
 
 - **Frequency**: Daily at 2:00 AM UTC
 - **Retention**: 180 days (6 months)
-- **Location**: `/data/backups/` on the persistent volume
+- **Local Location**: `/data/backups/` on the persistent volume
+- **Offsite Location**: Dropbox (if rclone is configured)
 
 ### Backup Types
 
 1. **Database Backup**: `seminars_db_YYYYMMDD_HHMMSS.db.gz`
 2. **Uploads Backup**: `seminars_uploads_YYYYMMDD_HHMMSS.tar.gz`
-3. **Full Backup**: `seminars_full_YYYYMMDD_HHMMSS.tar.gz` (includes both + manifest)
+3. **Fallback Mirror**: `seminars_mirror_YYYYMMDD_HHMMSS.tar.gz` (HTML recovery files)
+4. **Full Backup**: `seminars_full_YYYYMMDD_HHMMSS.tar.gz` (includes all above + manifest)
 
 ## Automated Backups
 
-### Cron Job
+### Automated Backups
 
-A cron job is configured to run backups automatically:
+Backups run daily at 2:00 AM UTC via **GitHub Actions**.
 
-```bash
-0 2 * * * /app/backup.sh
-```
+**Setup:**
+1. Create a Fly.io token: `flyctl tokens create deploy -a seminars-app`
+2. Add it to GitHub: Repository Settings → Secrets and variables → Actions → New repository secret
+3. Name: `FLY_API_TOKEN`, Value: (the token from step 1)
 
-This runs daily at 2:00 AM UTC.
+The workflow in `.github/workflows/backup.yml` runs automatically. Monitor in the Actions tab.
+
+See [SCHEDULED_BACKUPS.md](SCHEDULED_BACKUPS.md) for details.
+
+### Offsite Backups (Dropbox)
+
+The backup script automatically uploads backups to Dropbox if `rclone` is configured:
+
+1. Configure rclone with your Dropbox account:
+   ```bash
+   rclone config
+   ```
+
+2. Set environment variables (optional):
+   ```bash
+   DROPBOX_REMOTE="dropbox:"
+   DROPBOX_BACKUP_PATH="/seminars-app/backups"
+   ```
+
+3. The backup script will automatically:
+   - Upload full backups to Dropbox
+   - Upload fallback mirror separately for easy access
+   - Clean old backups (older than 180 days) from Dropbox
 
 ### Monitoring Backups
 
@@ -143,7 +168,36 @@ fly ssh console --app seminars-app
    ls -la /data/uploads/
    ```
 
-### Scenario 3: Single File Recovery
+### Scenario 3: Fly.io Down - Access Fallback Mirror
+
+If the app and Fly.io are unavailable, access your data via the fallback mirror:
+
+#### Option 1: Download from Dropbox (Recommended)
+
+1. Log into your Dropbox account
+2. Navigate to `/seminars-app/backups/`
+3. Download the latest `seminars_mirror_*.tar.gz` file
+4. Extract and open `index.html` in your browser:
+   ```bash
+   tar -xzf seminars_mirror_20260222_114518.tar.gz
+   open fallback-mirror/index.html
+   ```
+
+#### Option 2: Download from Fly.io (if SSH still works)
+
+```bash
+# List available mirror backups
+fly ssh console --app seminars-app -C "ls -la /data/backups/seminars_mirror_*.tar.gz"
+
+# Download via sftp
+fly sftp get /data/backups/seminars_mirror_YYYYMMDD_HHMMSS.tar.gz
+
+# Extract and view
+tar -xzf seminars_mirror_YYYYMMDD_HHMMSS.tar.gz
+open fallback-mirror/index.html
+```
+
+### Scenario 4: Single File Recovery
 
 To recover a specific uploaded file:
 
@@ -193,10 +247,11 @@ Common issues:
 ## Best Practices
 
 1. **Test restores periodically** - Don't wait for disaster
-2. **Monitor backup logs** - Check daily for errors
-3. **Keep offsite copies** - Download critical backups locally
+2. **Monitor backup logs** - Check daily for errors: `cat /data/backups/backup.log | tail -20`
+3. **Keep offsite copies** - Verify Dropbox uploads are working
 4. **Document changes** - Note any schema changes that might affect restores
-5. **Verify fallback mirror updates** - Confirm `fallback-mirror/recovery.html` and `changelog.html` update after major admin actions
+5. **Verify fallback mirror updates** - Download the latest mirror from Dropbox periodically and verify it opens correctly
+6. **Test offline access** - Ensure you can open the fallback mirror HTML files without internet
 
 ## Contact
 

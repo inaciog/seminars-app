@@ -69,7 +69,6 @@ class Settings(BaseSettings):
     app_url: str = "https://seminars-app.fly.dev"
     feature_semester_plan_v2: bool = False
     fallback_mirror_dir: str = "fallback-mirror"
-    fallback_mirror_git_enabled: bool = False
 
     class Config:
         env_file = ".env"
@@ -1029,42 +1028,7 @@ def refresh_fallback_mirror(db: Session):
 
     (mirror_dir / "index.html").write_text(index_html, encoding="utf-8")
 
-    if settings.fallback_mirror_git_enabled:
-        try:
-            project_root = Path(__file__).resolve().parents[1]
-            logger.info("Fallback mirror: committing and pushing to git")
-            mirror_rel = Path(settings.fallback_mirror_dir)
-            if not (project_root / ".git").exists():
-                logger.warning("Fallback mirror git skipped: not a git repository")
-            else:
-                r = subprocess.run(
-                    ["git", "add", str(mirror_rel)],
-                    cwd=str(project_root),
-                    capture_output=True,
-                    text=True,
-                )
-                if r.returncode != 0:
-                    logger.error(f"Fallback mirror git add failed: {r.stderr or r.stdout}")
-                else:
-                    r = subprocess.run(
-                        ["git", "commit", "-m", f"Update fallback mirror {datetime.utcnow().isoformat()}"],
-                        cwd=str(project_root),
-                        capture_output=True,
-                        text=True,
-                    )
-                    if r.returncode == 0:
-                        r = subprocess.run(
-                            ["git", "push"],
-                            cwd=str(project_root),
-                            capture_output=True,
-                            text=True,
-                        )
-                        if r.returncode != 0:
-                            logger.error(f"Fallback mirror git push failed: {r.stderr or r.stdout}")
-                    elif "nothing to commit" not in (r.stderr or "").lower() and "nothing to commit" not in (r.stdout or "").lower():
-                        logger.warning(f"Fallback mirror git commit: {r.stderr or r.stdout}")
-        except Exception as e:
-            logger.error(f"Fallback mirror git update failed: {e}", exc_info=True)
+    logger.info(f"Fallback mirror updated at {mirror_dir}")
 
 def ensure_legacy_writes_allowed():
     if settings.feature_semester_plan_v2:
@@ -3755,6 +3719,44 @@ async def external_upcoming(secret: str, limit: int = 5, db: Session = Depends(g
             for s in seminars
         ]
     }
+
+# ============================================================================
+# Admin / Backup Endpoints
+# ============================================================================
+
+@app.get("/api/admin/backup-status")
+async def backup_status(secret: str):
+    """
+    Get latest backup status.
+    Requires API_SECRET for authentication.
+    """
+    if secret != settings.api_secret:
+        raise HTTPException(status_code=401, detail="Invalid secret")
+    
+    backup_dir = Path("/data/backups")
+    
+    if not backup_dir.exists():
+        return {"backups": [], "latest": None}
+    
+    # Find all backup files
+    backups = []
+    for pattern in ["seminars_full_*.tar.gz", "seminars_mirror_*.tar.gz"]:
+        for f in backup_dir.glob(pattern):
+            backups.append({
+                "filename": f.name,
+                "size": f.stat().st_size,
+                "created": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+            })
+    
+    # Sort by creation time (newest first)
+    backups.sort(key=lambda x: x["created"], reverse=True)
+    
+    return {
+        "backups": backups[:10],  # Last 10 backups
+        "latest": backups[0] if backups else None,
+        "backup_dir": str(backup_dir)
+    }
+
 
 # ============================================================================
 # Health Check
