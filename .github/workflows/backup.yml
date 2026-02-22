@@ -18,11 +18,11 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           echo "Finding the app machine..."
-          # Get the machine ID for the seminars-app (not the alpine one)
-          MACHINE_ID=$(flyctl machine list --app seminars-app --json | jq -r '.[] | select(.image | contains("seminars-app")) | .id')
+          # Get the machine ID for the seminars-app (filter out machines with no image or alpine image)
+          MACHINE_ID=$(flyctl machine list --app seminars-app --json | jq -r '[.[] | select(.image != null and (.image | contains("seminars-app")))] | first | .id')
           echo "Machine ID: $MACHINE_ID"
           
-          if [ -z "$MACHINE_ID" ]; then
+          if [ -z "$MACHINE_ID" ] || [ "$MACHINE_ID" = "null" ]; then
             echo "ERROR: Could not find app machine"
             exit 1
           fi
