@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchWithAuth, getAccessCode } from '@/api/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { X, Upload, FileText, Image, Plane, Home, CreditCard, User, Check, Trash2 } from 'lucide-react';
+import { X, Upload, FileText, Image, Plane, Home, CreditCard, User, Check, Trash2, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SeminarDetailsModalProps {
@@ -297,7 +297,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
   }, [seminarId, queryClient]);
 
   // File upload handler
-  const handleFileUpload = async (file: File, fileType: 'cv' | 'photo' | 'passport' | 'flight') => {
+  const handleFileUpload = async (file: File, fileType: 'cv' | 'photo' | 'passport' | 'flight' | 'other') => {
     setUploadingFile(fileType);
     const uploadData = new FormData();
     uploadData.append('file', file);
@@ -812,6 +812,52 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                       className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 disabled:opacity-50"
                     />
                     <p className="text-xs text-gray-500 mt-1">Screenshot or PDF from airline/website (Kayak, Expedia, trip.com, etc.)</p>
+                  </div>
+
+                  {/* Other / Arbitrary Files (internal only - not shown to speaker) */}
+                  <div className="p-4 border border-gray-200 rounded-lg border-dashed">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Paperclip className="w-5 h-5 text-gray-500" />
+                        <span className="font-medium">Other Files</span>
+                        <span className="text-xs text-gray-500">(internal use only, not shown to speaker)</span>
+                      </div>
+                    </div>
+                    {getFilesByCategory('other').length > 0 && (
+                      <div className="mb-3 space-y-2">
+                        {getFilesByCategory('other').map((file: any) => (
+                          <div key={file.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                            <span className="text-sm text-gray-700 truncate flex-1">{file.original_filename}</span>
+                            <div className="flex items-center gap-2">
+                              <a
+                                href={`/api/v1/seminars/seminars/${seminarId}/files/${file.id}/download?access_code=${getAccessCode() || ''}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                              >
+                                <Check className="w-4 h-4" /> Download
+                              </a>
+                              <button
+                                onClick={() => handleFileDelete(file.id)}
+                                disabled={deletingFile === file.id}
+                                className="text-sm text-red-600 hover:text-red-700 flex items-center gap-1 disabled:opacity-50"
+                                title="Delete file"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="*"
+                      disabled={uploadingFile === 'other'}
+                      onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0], 'other')}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 disabled:opacity-50"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Upload any file type (internal use only)</p>
                   </div>
                 </FormSection>
               </div>

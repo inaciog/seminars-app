@@ -119,10 +119,11 @@ def seed_data():
         db.commit()
         print(f"  ✓ Created semester plan: {semester_plan.name}")
         
-        # Create seminar slots
+        # Create seminar slots (use future dates so they appear as "upcoming")
         print("  Creating seminar slots...")
         slots = []
-        base_date = date(2025, 3, 1)
+        today = date.today()
+        base_date = today + timedelta(days=7)  # Start next week
         for i in range(12):  # 12 weeks
             slot_date = base_date + timedelta(weeks=i)
             slot = SeminarSlot(
@@ -139,12 +140,13 @@ def seed_data():
         db.commit()
         print(f"  ✓ Created {len(slots)} seminar slots")
         
-        # Create seminars
+        # Create seminars (dates relative to today so they appear as "upcoming")
         print("  Creating seminars...")
+        seminar_base = today + timedelta(days=14)  # 2 weeks from now
         seminars_data = [
             {
                 "title": "Advances in Machine Learning for Climate Modeling",
-                "date": date(2025, 3, 15),
+                "date": seminar_base,
                 "start_time": "14:00",
                 "end_time": "15:30",
                 "speaker_id": speakers[4].id,  # Emily Brown
@@ -157,7 +159,7 @@ def seed_data():
             },
             {
                 "title": "Quantum Computing: From Theory to Practice",
-                "date": date(2025, 3, 22),
+                "date": seminar_base + timedelta(days=7),
                 "start_time": "14:00",
                 "end_time": "15:30",
                 "speaker_id": speakers[1].id,  # Michael Chen
@@ -169,7 +171,7 @@ def seed_data():
             },
             {
                 "title": "Behavioral Economics in the Digital Age",
-                "date": date(2025, 4, 5),
+                "date": seminar_base + timedelta(days=21),
                 "start_time": "14:00",
                 "end_time": "15:30",
                 "speaker_id": speakers[2].id,  # Sarah Johnson
@@ -180,7 +182,7 @@ def seed_data():
             },
             {
                 "title": "String Theory and the Multiverse",
-                "date": date(2025, 4, 19),
+                "date": seminar_base + timedelta(days=35),
                 "start_time": "14:00",
                 "end_time": "15:30",
                 "speaker_id": speakers[3].id,  # David Williams
@@ -190,7 +192,7 @@ def seed_data():
             },
             {
                 "title": "Autonomous Robotics in Manufacturing",
-                "date": date(2025, 5, 3),
+                "date": seminar_base + timedelta(days=49),
                 "start_time": "14:00",
                 "end_time": "15:30",
                 "speaker_id": speakers[5].id,  # Robert Taylor
@@ -200,7 +202,7 @@ def seed_data():
             },
             {
                 "title": "Deep Learning for Natural Language Understanding",
-                "date": date(2025, 5, 17),
+                "date": seminar_base + timedelta(days=63),
                 "start_time": "14:00",
                 "end_time": "15:30",
                 "speaker_id": speakers[0].id,  # Jane Smith
@@ -304,10 +306,10 @@ def seed_data():
         # Add availability for one suggestion
         print("  Creating speaker availability...")
         availability_data = [
-            {"date": date(2025, 6, 1), "preference": "preferred"},
-            {"date": date(2025, 6, 8), "preference": "available"},
-            {"date": date(2025, 6, 15), "preference": "available"},
-            {"date": date(2025, 6, 22), "preference": "not_preferred"}
+            {"date": today + timedelta(days=21), "preference": "preferred"},
+            {"date": today + timedelta(days=28), "preference": "available"},
+            {"date": today + timedelta(days=35), "preference": "available"},
+            {"date": today + timedelta(days=42), "preference": "not_preferred"}
         ]
         
         for avail in availability_data:

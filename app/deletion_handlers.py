@@ -137,7 +137,7 @@ def delete_semester_plan_robust(plan_id: int, db: Session) -> dict:
     Policy: Cascade delete everything related to this plan.
     This is a destructive operation.
     """
-    from app.main import SemesterPlan, SeminarSlot, SpeakerSuggestion, SpeakerToken, Seminar
+    from app.main import SemesterPlan, SeminarSlot, SpeakerSuggestion, SpeakerToken, Seminar, ActivityEvent, SpeakerWorkflow, SpeakerAvailability
     
     plan = db.get(SemesterPlan, plan_id)
     if not plan:
@@ -170,6 +170,23 @@ def delete_semester_plan_robust(plan_id: int, db: Session) -> dict:
             # Use robust delete to clean up files, details, etc.
             delete_seminar_robust(seminar.id, db)
         logger.info(f"Deleted {len(seminars)} seminars")
+    
+    # Delete activity events for this plan
+    events_stmt = select(ActivityEvent).where(ActivityEvent.semester_plan_id == plan_id)
+    for evt in db.exec(events_stmt).all():
+        db.delete(evt)
+    
+    # Delete speaker workflows for these suggestions
+    if suggestion_ids:
+        workflows_stmt = select(SpeakerWorkflow).where(SpeakerWorkflow.suggestion_id.in_(suggestion_ids))
+        for wf in db.exec(workflows_stmt).all():
+            db.delete(wf)
+    
+    # Delete speaker availability for these suggestions
+    if suggestion_ids:
+        avail_stmt = select(SpeakerAvailability).where(SpeakerAvailability.suggestion_id.in_(suggestion_ids))
+        for av in db.exec(avail_stmt).all():
+            db.delete(av)
     
     # Delete slots
     for slot in slots:

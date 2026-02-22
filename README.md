@@ -68,34 +68,58 @@ Backups run daily via cron:
 ./backup.sh
 ```
 
-## Development
+## Local Development
 
-### Backend
+Test the app locally before deploying.
+
+### Quick start
+
+**Single script** (easiest):
 
 ```bash
-# Install dependencies
+./dev.sh --setup   # first time: install deps, create .env, synthetic DB
+./dev.sh           # start backend + frontend
+```
+
+Uses a local synthetic database (`./data/seminars.db`) — never touches production.
+
+**Or with Makefile**:
+
+```bash
+make setup
+# Edit .env with your JWT_SECRET and API_SECRET
+make seed          # optional: test data
+make dev-backend   # terminal 1 → http://localhost:8000
+make dev-frontend  # terminal 2 → http://localhost:3000
+```
+
+Then open **http://localhost:3000**. The frontend proxies `/api` to the backend.
+
+### Auth for local testing
+
+Local runs use the same auth flow as production. Set `APP_URL=http://localhost:3000` and ensure your auth service allows `http://localhost:3000` as a valid redirect.
+
+### Manual setup
+
+```bash
+# Backend
 pip install -r requirements.txt
+cp .env.example .env   # edit with JWT_SECRET, API_SECRET
+uvicorn app.main:app --reload --port 8000
 
-# Copy env template and configure
-cp .env.example .env
-
-# Run locally
-uvicorn app.main:app --reload
+# Frontend (separate terminal)
+cd frontend && npm install && npm run dev
 ```
 
-### Frontend
+### Run both in one terminal
 
 ```bash
-cd frontend
-npm install
-npm run dev
+./dev.sh       # or: make dev-all
 ```
-
-The frontend dev server runs on port 3000 and proxies `/api` to the backend (port 8000).
 
 ### Tests
 
 ```bash
-# Backend tests (uses test_seminars.db, created automatically)
-pytest
+make test
+# or: pytest
 ```

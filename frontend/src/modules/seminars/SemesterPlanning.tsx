@@ -33,8 +33,6 @@ import { isWithinInterval, parseISO, isSameDay } from 'date-fns';
 interface SemesterPlan {
   id: number;
   name: string;
-  academic_year: string;
-  semester: string;
   default_room: string;
   status: string;
 }
@@ -53,12 +51,25 @@ interface SeminarSlot {
 
 interface SpeakerAvailability {
   id: number;
-  start_date: string;
-  end_date: string;
+  date?: string;
+  start_date?: string;
+  end_date?: string;
   preference: string;
   earliest_time?: string;
   latest_time?: string;
   notes?: string;
+}
+
+function getAvailabilityRange(avail: SpeakerAvailability): { start: Date; end: Date } | null {
+  const startRaw = avail.start_date || avail.date;
+  const endRaw = avail.end_date || avail.date;
+  if (!startRaw || !endRaw) return null;
+
+  const start = parseISO(startRaw);
+  const end = parseISO(endRaw);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  return { start, end };
 }
 
 interface SpeakerSuggestion {
@@ -66,6 +77,8 @@ interface SpeakerSuggestion {
   speaker_name: string;
   speaker_affiliation?: string;
   suggested_by: string;
+  suggested_by_email?: string;
+  reason?: string;
   suggested_topic?: string;
   priority: 'low' | 'medium' | 'high';
   status: string;
@@ -142,8 +155,6 @@ export function SemesterPlanning() {
   const [showAddSpeakerModal, setShowAddSpeakerModal] = useState(false);
   const [showAddDateModal, setShowAddDateModal] = useState(false);
   const [editingSuggestion, setEditingSuggestion] = useState<SpeakerSuggestion | null>(null);
-  const [generatedLink, setGeneratedLink] = useState<{link: string; speaker_name: string; linkType: 'availability' | 'info'} | null>(null);
-  const [emailDraft, setEmailDraft] = useState<EmailDraftData | null>(null);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [unassignModal, setUnassignModal] = useState<{ slotId: number; seminarId: number; seminarTitle: string } | null>(null);
   const queryClient = useQueryClient();
@@ -152,10 +163,21 @@ export function SemesterPlanning() {
     setExpandedNotes(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  const { data: plans, isLoading: plansLoading } = useQuery({
+  const { data: plansRaw, isLoading: plansLoading } = useQuery({
     queryKey: ['semester-plans'],
     queryFn: fetchPlans,
   });
+
+  // Deduplicate plans by id (safety against any duplicate API/db data)
+  const plans = useMemo(() => {
+    if (!plansRaw?.length) return plansRaw ?? [];
+    const seen = new Set<number>();
+    return plansRaw.filter((p: { id: number }) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }, [plansRaw]);
 
   const { data: boardData, isLoading: boardLoading } = useQuery({
     queryKey: ['planning-board', selectedPlanId],
@@ -239,46 +261,6 @@ export function SemesterPlanning() {
     },
   });
 
-  const generateAvailabilityLinkMutation = useMutation({
-    mutationFn: async (suggestionId: number) => {
-      const response = await fetchWithAuth('/api/v1/seminars/speaker-tokens/availability', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggestion_id: suggestionId }),
-      });
-      if (!response.ok) throw new Error('Failed to generate link');
-      return response.json();
-    },
-    onSuccess: (data, suggestionId) => {
-      const suggestion = boardData?.suggestions.find(s => s.id === suggestionId);
-      setGeneratedLink({
-        link: `${window.location.origin}${data.link}`,
-        speaker_name: suggestion?.speaker_name || '',
-        linkType: 'availability'
-      });
-    },
-  });
-
-  const generateInfoLinkMutation = useMutation({
-    mutationFn: async ({ seminarId, suggestionId }: { seminarId: number; suggestionId: number }) => {
-      const response = await fetchWithAuth('/api/v1/seminars/speaker-tokens/info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seminar_id: seminarId, suggestion_id: suggestionId }),
-      });
-      if (!response.ok) throw new Error('Failed to generate link');
-      return response.json();
-    },
-    onSuccess: (data, variables) => {
-      const suggestion = boardData?.suggestions.find(s => s.id === variables.suggestionId);
-      setGeneratedLink({
-        link: `${window.location.origin}${data.link}`,
-        speaker_name: suggestion?.speaker_name || '',
-        linkType: 'info'
-      });
-    },
-  });
-
   // Group slots by month
   const slotsByMonth = boardData?.slots?.reduce((acc: Record<string, SeminarSlot[]>, slot) => {
     const month = new Date(slot.date).toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -333,9 +315,6 @@ export function SemesterPlanning() {
                     onClick={() => setSelectedPlanId(plan.id)}
                   >
                     <h3 className="font-semibold text-gray-900">{plan.name}</h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {plan.academic_year} • {plan.semester}
-                    </p>
                     <p className="text-sm text-gray-500 mt-2">
                       Room: {plan.default_room}
                     </p>
@@ -388,12 +367,20 @@ export function SemesterPlanning() {
                 {boardData?.plan?.name}
               </h2>
             </div>
-            <button 
-              onClick={() => setShowAddDateModal(true)}
-              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-            >
-              Add Date
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => window.open(`/faculty/suggest-speaker/${selectedPlanId}`, '_blank')}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+              >
+                Faculty Form
+              </button>
+              <button
+                onClick={() => setShowAddDateModal(true)}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+              >
+                Add Date
+              </button>
+            </div>
           </div>
 
           {boardLoading ? (
@@ -424,7 +411,6 @@ export function SemesterPlanning() {
                           }}
                           onUnassign={() => {
                             if (slot.assigned_seminar_id) {
-                              const speakerName = slot.assigned_speaker_name || 'Speaker';
                               setUnassignModal({
                                 slotId: slot.id,
                                 seminarId: slot.assigned_seminar_id,
@@ -436,84 +422,6 @@ export function SemesterPlanning() {
                             if (confirm(`Delete this slot on ${new Date(slot.date).toLocaleDateString()}?`)) {
                               deleteSlotMutation.mutate(slot.id);
                             }
-                          }}
-                          onGenerateInfoLink={() => {
-                            if (!slot.assigned_seminar_id) return;
-
-                            const suggestion = boardData?.suggestions.find(s => s.id === slot.assigned_suggestion_id)
-                              ?? boardData?.suggestions.find(
-                                s => s.speaker_name?.trim().toLowerCase() === slot.assigned_speaker_name?.trim().toLowerCase()
-                              );
-
-                            if (suggestion?.id) {
-                              generateInfoLinkMutation.mutate({
-                                seminarId: slot.assigned_seminar_id,
-                                suggestionId: suggestion.id
-                              });
-                            }
-                          }}
-                          onDraftEmail={async (type) => {
-                            // Calculate deadline (45 days before talk date, or today if less)
-                            const talkDate = new Date(slot.date);
-                            const today = new Date();
-                            const deadline = new Date(talkDate);
-                            deadline.setDate(deadline.getDate() - 45);
-                            // If deadline is in the past, use today + 3 days
-                            if (deadline < today) {
-                              deadline.setTime(today.getTime() + 3 * 24 * 60 * 60 * 1000);
-                            }
-                            
-                            const suggestion = boardData?.suggestions.find(s => s.id === slot.assigned_suggestion_id)
-                              ?? boardData?.suggestions.find(
-                                s => s.speaker_name?.trim().toLowerCase() === slot.assigned_speaker_name?.trim().toLowerCase()
-                              );
-                            
-                            // Auto-generate info link for info_request emails
-                            let infoLink = '';
-                            let linkError = '';
-                            if (type === 'info_request' && slot.assigned_seminar_id && suggestion?.id) {
-                              try {
-                                const response = await fetchWithAuth('/api/v1/seminars/speaker-tokens/info', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ 
-                                    seminar_id: slot.assigned_seminar_id, 
-                                    suggestion_id: suggestion.id
-                                  }),
-                                });
-                                if (response.ok) {
-                                  const data = await response.json();
-                                  infoLink = `${window.location.origin}${data.link}`;
-                                } else {
-                                  const errorText = await response.text();
-                                  linkError = `Failed: ${response.status} - ${errorText}`;
-                                }
-                              } catch (err) {
-                                linkError = 'Network error generating link';
-                              }
-                            } else if (type === 'info_request') {
-                              const availableSpeakers = boardData?.suggestions?.map(s => s.speaker_name).join(', ') || 'none';
-                              linkError = `Speaker "${slot.assigned_speaker_name}" not found in suggestions. Available: ${availableSpeakers}`;
-                            }
-                            
-                            setEmailDraft({
-                              type,
-                              speakerName: slot.assigned_speaker_name || suggestion?.speaker_name || '',
-                              slotDate: new Date(slot.date).toLocaleDateString('en-US', { 
-                                month: 'long', 
-                                day: 'numeric', 
-                                year: 'numeric' 
-                              }),
-                              slotTime: `${slot.start_time} - ${slot.end_time}`,
-                              deadlineDate: deadline.toLocaleDateString('en-US', {
-                                month: 'long',
-                                day: 'numeric',
-                                year: 'numeric'
-                              }),
-                              suggestedBy: suggestion?.suggested_by,
-                              infoLink,
-                              linkError,
-                            });
                           }}
                         />
                       ))}
@@ -561,32 +469,6 @@ export function SemesterPlanning() {
                           }
                         }}
                         onAddAvailability={() => setEditingSuggestion(suggestion)}
-                        onGenerateLink={() => generateAvailabilityLinkMutation.mutate(suggestion.id)}
-                        onDraftEmail={async (type) => {
-                          // Auto-generate availability link if needed
-                          let availabilityLink = '';
-                          if (type === 'availability_request') {
-                            try {
-                              const response = await fetchWithAuth('/api/v1/seminars/speaker-tokens/availability', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ suggestion_id: suggestion.id }),
-                              });
-                              if (response.ok) {
-                                const data = await response.json();
-                                availabilityLink = `${window.location.origin}${data.link}`;
-                              }
-                            } catch (err) {
-                              console.error('Failed to generate link:', err);
-                            }
-                          }
-                          setEmailDraft({
-                            type,
-                            speakerName: suggestion.speaker_name,
-                            suggestedBy: suggestion.suggested_by,
-                            availabilityLink,
-                          });
-                        }}
                       />
                     ))}
                     
@@ -662,24 +544,6 @@ export function SemesterPlanning() {
         />
       )}
 
-      {/* Generated Link Modal */}
-      {generatedLink && (
-        <GeneratedLinkModal
-          link={generatedLink.link}
-          speakerName={generatedLink.speaker_name}
-          linkType={generatedLink.linkType}
-          onClose={() => setGeneratedLink(null)}
-        />
-      )}
-
-      {/* Email Draft Modal */}
-      {emailDraft && (
-        <EmailDraftModal
-          draft={emailDraft}
-          onClose={() => setEmailDraft(null)}
-        />
-      )}
-
       {/* Unassign choice modal */}
       {unassignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -726,8 +590,6 @@ function SlotCard({
   onClick,
   onUnassign,
   onDelete,
-  onGenerateInfoLink,
-  onDraftEmail,
 }: { 
   slot: SeminarSlot; 
   isSelected: boolean;
@@ -735,8 +597,6 @@ function SlotCard({
   onClick: () => void;
   onUnassign?: () => void;
   onDelete?: () => void;
-  onGenerateInfoLink?: () => void;
-  onDraftEmail?: (type: 'date_confirmation' | 'info_request') => void;
 }) {
   const statusColors = {
     available: 'bg-green-50 border-green-200 hover:border-green-300',
@@ -751,12 +611,13 @@ function SlotCard({
       return false;
     }
     const slotDate = parseISO(slot.date);
+    if (Number.isNaN(slotDate.getTime())) return false;
     return selectedSuggestion.availability.some(avail => {
-      const startDate = parseISO(avail.start_date);
-      const endDate = parseISO(avail.end_date);
-      return isWithinInterval(slotDate, { start: startDate, end: endDate }) ||
-             isSameDay(slotDate, startDate) || 
-             isSameDay(slotDate, endDate);
+      const range = getAvailabilityRange(avail);
+      if (!range) return false;
+      return isWithinInterval(slotDate, range) ||
+             isSameDay(slotDate, range.start) ||
+             isSameDay(slotDate, range.end);
     });
   }, [slot.date, selectedSuggestion]);
 
@@ -817,50 +678,6 @@ function SlotCard({
         )}
         {(slot.status === 'reserved' || slot.status === 'confirmed') && slot.assigned_seminar_id && (
           <div className="flex items-center gap-1">
-            {/* Email Actions - Primary */}
-            {onDraftEmail && (
-              <div className="flex items-center gap-1 border-r border-gray-200 pr-1 mr-1">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDraftEmail('date_confirmation');
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg shadow-sm"
-                  title="Draft date confirmation email"
-                >
-                  <Mail className="w-3 h-3" />
-                  <span className="hidden sm:inline">Confirm</span>
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDraftEmail('info_request');
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg shadow-sm"
-                  title="Draft info request email"
-                >
-                  <FileText className="w-3 h-3" />
-                  <span className="hidden sm:inline">Info</span>
-                </button>
-              </div>
-            )}
-            
-            {/* Link Generation - Secondary */}
-            {onGenerateInfoLink && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onGenerateInfoLink();
-                }}
-                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-lg"
-                title="Generate info form link only"
-              >
-                <LinkIcon className="w-3 h-3" />
-                <span className="hidden sm:inline">Link</span>
-              </button>
-            )}
-            
-            {/* Management Actions - Tertiary */}
             {onUnassign && (
               <button
                 onClick={(e) => {
@@ -900,8 +717,6 @@ function SuggestionCard({
   onClick,
   onDelete,
   onAddAvailability,
-  onGenerateLink,
-  onDraftEmail,
 }: { 
   suggestion: SpeakerSuggestion; 
   isSelected: boolean;
@@ -910,8 +725,6 @@ function SuggestionCard({
   onClick: () => void;
   onDelete?: () => void;
   onAddAvailability?: () => void;
-  onGenerateLink?: () => void;
-  onDraftEmail?: (type: 'availability_request') => void;
 }) {
   const priorityColors = {
     low: 'bg-gray-100 text-gray-700',
@@ -951,46 +764,17 @@ function SuggestionCard({
           </div>
         </div>
 
-        {/* Primary Actions Row */}
-        <div className="flex items-center justify-between mt-2">
-          <div className="flex items-center gap-1">
-            <span className={cn('px-2 py-0.5 text-xs rounded', statusColors[suggestion.status] || 'bg-gray-100')}>
-              {suggestion.status.replace(/_/g, ' ')}
-            </span>
-            <span className="text-xs text-gray-500">
-              by {suggestion.suggested_by}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            {/* Email Action */}
-            {onDraftEmail && suggestion.status === 'pending' && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDraftEmail('availability_request');
-                }}
-                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded"
-                title="Draft availability request email"
-              >
-                <Mail className="w-3 h-3" />
-                Email
-              </button>
-            )}
-            {/* Link Generation */}
-            {onGenerateLink && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onGenerateLink();
-                }}
-                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded"
-                title="Generate availability link only"
-              >
-                <LinkIcon className="w-3 h-3" />
-                Link
-              </button>
-            )}
-          </div>
+        <div className="flex items-center gap-2 mt-2">
+          <span className={cn('px-2 py-0.5 text-xs rounded', statusColors[suggestion.status] || 'bg-gray-100')}>
+            {suggestion.status.replace(/_/g, ' ')}
+          </span>
+          <span
+            className="text-xs text-gray-500 cursor-default"
+            title={suggestion.reason ? `Reason / context: ${suggestion.reason}` : undefined}
+          >
+            by {suggestion.suggested_by}
+            {suggestion.suggested_by_email && <> ({suggestion.suggested_by_email})</>}
+          </span>
         </div>
       </div>
 
@@ -1014,9 +798,11 @@ function SuggestionCard({
             </p>
             <div className="space-y-1">
               {suggestion.availability.slice(0, 3).map((avail, i) => {
-                const isRange = avail.start_date !== avail.end_date;
-                const start = new Date(avail.start_date);
-                const end = new Date(avail.end_date);
+                const range = getAvailabilityRange(avail);
+                if (!range) return null;
+                const start = range.start;
+                const end = range.end;
+                const isRange = start.getTime() !== end.getTime();
                 const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
                 const hasNotes = avail.notes && avail.notes.trim().length > 0;
                 const noteId = `${suggestion.id}-${avail.id || i}`;
@@ -1237,8 +1023,6 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
-    academic_year: '2025-2026',
-    semester: 'spring',
     default_room: '',
   });
   const [selectedDates, setSelectedDates] = useState<Date[]>([]);
@@ -1251,8 +1035,6 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formData.name,
-          academic_year: formData.academic_year,
-          semester: formData.semester,
           default_room: formData.default_room,
           status: 'draft',
         }),
@@ -1319,33 +1101,6 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
                 placeholder="e.g., Spring 2024 Seminar Series"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Academic Year
-                </label>
-                <input
-                  type="text"
-                  value={formData.academic_year}
-                  onChange={(e) => setFormData(prev => ({ ...prev, academic_year: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Semester
-                </label>
-                <select
-                  value={formData.semester}
-                  onChange={(e) => setFormData(prev => ({ ...prev, semester: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="spring">Spring</option>
-                  <option value="fall">Fall</option>
-                </select>
-              </div>
             </div>
 
             <div>
@@ -1419,7 +1174,7 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function GeneratedLinkModal({ link, speakerName, linkType, onClose }: { link: string; speakerName: string; linkType: 'availability' | 'info'; onClose: () => void }) {
+export function GeneratedLinkModal({ link, speakerName, linkType, onClose }: { link: string; speakerName: string; linkType: 'availability' | 'info' | 'status'; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -1432,13 +1187,21 @@ function GeneratedLinkModal({ link, speakerName, linkType, onClose }: { link: st
     }
   };
 
-  const title = linkType === 'availability' ? 'Availability Link Generated' : 'Speaker Details Link Generated';
-  const description = linkType === 'availability' 
+  const title = linkType === 'availability'
+    ? 'Availability Link Generated'
+    : linkType === 'info'
+      ? 'Speaker Details Link Generated'
+      : 'Speaker Status Link Generated';
+  const description = linkType === 'availability'
     ? `Send this link to ${speakerName} so they can submit their availability:`
-    : `Send this link to ${speakerName} so they can provide their talk details and travel information:`;
+    : linkType === 'info'
+      ? `Send this link to ${speakerName} so they can provide their talk details and travel information:`
+      : `Send this link to ${speakerName} so they can check current seminar status anytime:`;
   const tip = linkType === 'availability'
     ? 'Include this link in your email to the speaker. The link is valid for 30 days and can be used multiple times if they need to update their availability.'
-    : 'Include this link in your email to the speaker. The link is valid for 60 days and can be used multiple times if they need to update their information.';
+    : linkType === 'info'
+      ? 'Include this link in your email to the speaker. The link is valid for 60 days and can be used multiple times if they need to update their information.'
+      : 'Share this status link with the speaker for real-time workflow updates.';
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1502,8 +1265,8 @@ function GeneratedLinkModal({ link, speakerName, linkType, onClose }: { link: st
   );
 }
 
-// Email Draft Types
-interface EmailDraftData {
+// Email Draft Types - exported for SpeakersControlPanel
+export interface EmailDraftData {
   type: 'availability_request' | 'date_confirmation' | 'info_request';
   speakerName: string;
   speakerEmail?: string;
@@ -1513,11 +1276,12 @@ interface EmailDraftData {
   suggestedBy?: string;
   infoLink?: string;
   availabilityLink?: string;
+  statusLink?: string;
   linkError?: string;
 }
 
-// Email Drafting Modal
-function EmailDraftModal({
+// Email Drafting Modal - exported for SpeakersControlPanel
+export function EmailDraftModal({
   draft,
   onClose,
 }: {
@@ -1582,6 +1346,10 @@ Thank you for letting me know the dates when you are available to come and give 
 DATE: ${draft.slotDate || '[DATE]'}
 
 (Please let me know ASAP if your availability changed and this date no longer works)
+
+You can check the status of your visit preparation at any time using this link:
+
+${draft.statusLink || '[STATUS_LINK]'}
 
 I will soon send another e-mail asking for more details, but for the time being we are all set and looking forward to hosting you in Macau.
 
@@ -1736,6 +1504,21 @@ http://www.inaciobo.com`,
                   <span className="text-red-600">Error: {draft.linkError}</span>
                 ) : (
                   <span className="text-red-600">Failed to generate - please use "Link" button separately</span>
+                )}
+              </div>
+            )}
+            {draft.type === 'date_confirmation' && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-amber-700">Status link:</span>
+                {draft.statusLink ? (
+                  <span className="flex items-center gap-1 text-green-700">
+                    <Check className="w-4 h-4" />
+                    Generated and included in email
+                  </span>
+                ) : draft.linkError ? (
+                  <span className="text-red-600">Error: {draft.linkError}</span>
+                ) : (
+                  <span className="text-red-600">Failed to generate - please use "Status" button separately</span>
                 )}
               </div>
             )}

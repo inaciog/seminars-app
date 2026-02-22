@@ -22,6 +22,12 @@ This document describes the backup strategy, automated backup procedures, and re
    - MD5 checksums for integrity verification
    - Timestamp and hostname information
 
+4. **Fallback HTML Mirror** (`fallback-mirror/`)
+   - **recovery.html** — Human-readable backup: full seminar content (abstract, speaker, logistics), speaker bios, suggestions. Use for emergency recovery.
+   - **changelog.html** — Technical tracking: plans, slots, activity, files.
+   - **index.html** — Entry point with links to both.
+   - Updated after state-changing operations; kept in-repo as a safety fallback when the app UI/API is unavailable.
+
 ### Backup Schedule
 
 - **Frequency**: Daily at 2:00 AM UTC
@@ -190,6 +196,7 @@ Common issues:
 2. **Monitor backup logs** - Check daily for errors
 3. **Keep offsite copies** - Download critical backups locally
 4. **Document changes** - Note any schema changes that might affect restores
+5. **Verify fallback mirror updates** - Confirm `fallback-mirror/recovery.html` and `changelog.html` update after major admin actions
 
 ## Contact
 

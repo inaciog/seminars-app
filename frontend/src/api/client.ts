@@ -170,8 +170,15 @@ export const seminarsApi = {
     };
   }),
   
-  // Activities - stubbed
-  getRecentActivities: (limit?: number) => Promise.resolve([]),
+  // Activities
+  getRecentActivities: async (limit: number = 100, planId?: number) => {
+    const qs = new URLSearchParams();
+    qs.set('limit', String(limit));
+    if (planId != null) qs.set('plan_id', String(planId));
+    const r = await fetchWithAuth(`/api/v1/seminars/activity?${qs.toString()}`);
+    if (!r.ok) throw new Error('Failed to fetch activity');
+    return r.json();
+  },
 };
 
 // Legacy helper for compatibility

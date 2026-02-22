@@ -19,8 +19,9 @@ import {
 import { cn } from '@/lib/utils';
 
 interface AvailabilityRange {
-  start_date: string;
-  end_date: string;
+  date?: string;
+  start_date?: string;
+  end_date?: string;
   preference?: string;
 }
 
@@ -100,16 +101,23 @@ export function CalendarPicker({ selectedDates, onChange, minDate, existingAvail
     }
   }, [isShiftPressed, lastSelectedDate, selectedDates, onChange]);
 
-  // Check if a date is within existing availability ranges
+  // Check if a date is within existing availability (supports { date } or { start_date, end_date })
   const isInExistingAvailability = useCallback((date: Date): boolean => {
     if (!existingAvailability || existingAvailability.length === 0) return false;
     
     return existingAvailability.some(range => {
-      const startDate = parseISO(range.start_date);
-      const endDate = parseISO(range.end_date);
-      return isWithinInterval(date, { start: startDate, end: endDate }) ||
-             isSameDay(date, startDate) ||
-             isSameDay(date, endDate);
+      const startStr = range.start_date ?? range.date;
+      const endStr = range.end_date ?? range.date;
+      if (!startStr || !endStr) return false;
+      try {
+        const startDate = parseISO(startStr);
+        const endDate = parseISO(endStr);
+        return isWithinInterval(date, { start: startDate, end: endDate }) ||
+               isSameDay(date, startDate) ||
+               isSameDay(date, endDate);
+      } catch {
+        return false;
+      }
     });
   }, [existingAvailability]);
 

@@ -6,8 +6,9 @@ import { CalendarPicker } from '@/components/CalendarPicker';
 
 interface Availability {
   id?: number;
-  start_date: string;
-  end_date: string;
+  date?: string;
+  start_date?: string;
+  end_date?: string;
   preference: string;
   earliest_time?: string;
   latest_time?: string;
@@ -39,14 +40,19 @@ export function AddAvailabilityModal({
     mutationFn: async () => {
       if (dateRanges.length === 0) return;
       
-      const availabilities = dateRanges.map(range => ({
-        start_date: range.start.toISOString().split('T')[0],
-        end_date: range.end.toISOString().split('T')[0],
-        preference: 'available',
-        earliest_time: earliestTime || undefined,
-        latest_time: latestTime || undefined,
-        notes: notes || undefined,
-      }));
+      // Backend expects one availability item per date ({ date, preference }).
+      const availabilities = dateRanges.flatMap((range) => {
+        const dates: { date: string; preference: string }[] = [];
+        const current = new Date(range.start);
+        while (current <= range.end) {
+          dates.push({
+            date: current.toISOString().split('T')[0],
+            preference: 'available',
+          });
+          current.setDate(current.getDate() + 1);
+        }
+        return dates;
+      });
       
       const response = await fetchWithAuth(`/api/v1/seminars/speaker-suggestions/${suggestionId}/availability`, {
         method: 'POST',
@@ -114,27 +120,32 @@ export function AddAvailabilityModal({
     return dates;
   }, [dateRanges]);
 
-  const formatDateRange = (startStr: string, endStr: string) => {
+  const formatAvailabilityDisplay = (avail: Availability): string => {
+    const startStr = avail.start_date ?? avail.date;
+    const endStr = avail.end_date ?? avail.date;
+    if (!startStr || !endStr) return '—';
     const start = new Date(startStr);
     const end = new Date(endStr);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '—';
     const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
     const startFmt = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const endFmt = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    
-    if (startStr === endStr) {
-      return startFmt + ', ' + start.getFullYear();
-    }
-    return sameMonth 
+    if (startStr === endStr) return startFmt + ', ' + start.getFullYear();
+    return sameMonth
       ? `${startFmt}-${end.getDate()}, ${end.getFullYear()}`
       : `${startFmt} - ${endFmt}`;
   };
 
-  // Calculate total days in existing availability
+  // Calculate total days in existing availability (supports { date } or { start_date, end_date })
   const existingDays = useMemo(() => {
     let days = 0;
     for (const avail of existingAvailability) {
-      const start = new Date(avail.start_date);
-      const end = new Date(avail.end_date);
+      const startStr = avail.start_date ?? avail.date;
+      const endStr = avail.end_date ?? avail.date;
+      if (!startStr || !endStr) continue;
+      const start = new Date(startStr);
+      const end = new Date(endStr);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
       days += Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     }
     return days;
@@ -158,7 +169,7 @@ export function AddAvailabilityModal({
             <div className="p-4 bg-green-50 rounded-lg border border-green-200">
               <h3 className="font-medium text-green-900 mb-3 flex items-center gap-2">
                 <CheckCircle className="w-4 h-4" />
-                Already Available ({existingAvailability.length} ranges, {existingDays} days)
+                Already Available ({existingAvailability.length} entries, {existingDays} days)
               </h3>
               <div className="flex flex-wrap gap-2">
                 {existingAvailability.map((avail, idx) => (
@@ -166,7 +177,7 @@ export function AddAvailabilityModal({
                     key={idx}
                     className="inline-flex items-center px-2.5 py-1 rounded-full text-sm bg-green-100 text-green-800"
                   >
-                    {formatDateRange(avail.start_date, avail.end_date)}
+                    {formatAvailabilityDisplay(avail)}
                   </span>
                 ))}
               </div>

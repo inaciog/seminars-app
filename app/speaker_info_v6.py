@@ -3,6 +3,9 @@ Speaker Info Page v6 - Single Page Layout
 All sections visible on one page without tabs.
 """
 
+from app.templates import get_external_header_with_logos
+
+
 def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, seminar_title, seminar_date, token, seminar_id=None):
     """
     Generate speaker information page with all sections on a single page.
@@ -45,7 +48,34 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
             padding: 24px 20px;
             text-align: center;
         }}
-        .header h1 {{ font-size: 26px; font-weight: 600; }}
+        .header-logos {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }}
+        .header-logos-inner {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }}
+        .header .logo-wrap {{
+            background: white;
+            padding: 16px 28px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }}
+        .header .logo {{
+            height: 72px;
+            width: auto;
+            object-fit: contain;
+            display: block;
+        }}
+        .header .logo-um {{ max-height: 80px; }}
+        .header .logo-econ {{ max-height: 72px; }}
+        .header h1 {{ font-size: 26px; font-weight: 600; margin: 0; }}
         .header .subtitle {{ font-size: 15px; opacity: 0.9; margin-top: 6px; }}
         
         .container {{
@@ -138,7 +168,11 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
             color: var(--gray-800);
         }}
         
-        .form-label .required {{ color: var(--error); margin-left: 2px; }}
+        .form-label::after {{
+            content: " *";
+            color: var(--error);
+            margin-left: 2px;
+        }}
         
         .form-input,
         .form-textarea,
@@ -382,8 +416,7 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
 </head>
 <body>
     <div class="header">
-        <h1>🏛️ University of Macau</h1>
-        <div class="subtitle">Department of Economics · Faculty of Social Sciences</div>
+        {get_external_header_with_logos()}
     </div>
     
     <div class="container">
@@ -414,18 +447,18 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">Speaker Name <span class="required">*</span></label>
+                        <label class="form-label">Speaker Name</label>
                         <input type="text" id="speakerName" class="form-input" value="{speaker_name or ''}" placeholder="Your full name" required>
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">Final Talk Title <span class="required">*</span></label>
+                        <label class="form-label">Final Talk Title</label>
                         <input type="text" id="talkTitle" class="form-input" placeholder="Enter the title of your talk" required>
                     </div>
                     
                     <div class="form-group">
                         <label class="form-label">Abstract</label>
-                        <textarea id="abstract" class="form-textarea" rows="5" placeholder="Brief description of your talk (optional)"></textarea>
+                        <textarea id="abstract" class="form-textarea" rows="5" placeholder="Brief description of your talk"></textarea>
                     </div>
                 </div>
                 
@@ -455,11 +488,6 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                                 <option value="other">Other</option>
                             </select>
                         </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Estimated Travel Cost</label>
-                        <input type="number" id="estimatedTravelCost" class="form-input" placeholder="e.g. 500" step="0.01" min="0">
                     </div>
                     
                     <div class="form-row">
@@ -504,13 +532,8 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                         </div>
                         
                         <div class="form-group">
-                            <label class="form-label">Number of Nights <span style="font-weight: normal; color: var(--gray-600);">(auto-calculated)</span></label>
-                            <input type="number" id="accommodationNights" class="form-input" readonly style="background: var(--gray-100);">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Estimated Hotel Cost</label>
-                            <input type="number" id="estimatedHotelCost" class="form-input" placeholder="e.g. 200" step="0.01" min="0">
+                            <label class="form-label">Number of Nights</label>
+                            <div id="accommodationNightsDisplay" class="form-input" style="background: var(--gray-100); color: var(--gray-700);">-</div>
                         </div>
                     </div>
                 </div>
@@ -720,15 +743,12 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
             if (data.passport_country) document.getElementById('passportCountry').value = data.passport_country;
             if (data.departure_city) document.getElementById('departureCity').value = data.departure_city;
             if (data.travel_method) document.getElementById('travelMethod').value = data.travel_method;
-            if (data.estimated_travel_cost != null) document.getElementById('estimatedTravelCost').value = data.estimated_travel_cost;
             if (data.needs_accommodation) {{
                 document.getElementById('needsAccommodation').checked = true;
                 document.getElementById('accommodationFields').style.display = 'block';
             }}
             if (data.check_in_date) document.getElementById('checkInDate').value = data.check_in_date;
             if (data.check_out_date) document.getElementById('checkOutDate').value = data.check_out_date;
-            if (data.accommodation_nights != null) document.getElementById('accommodationNights').value = data.accommodation_nights;
-            if (data.estimated_hotel_cost != null) document.getElementById('estimatedHotelCost').value = data.estimated_hotel_cost;
             if (data.payment_email) document.getElementById('paymentEmail').value = data.payment_email;
             if (data.beneficiary_name) document.getElementById('beneficiaryName').value = data.beneficiary_name;
             if (data.bank_name) document.getElementById('bankName').value = data.bank_name;
@@ -766,6 +786,7 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
         function calculateNights() {{
             const checkIn = document.getElementById('checkInDate').value;
             const checkOut = document.getElementById('checkOutDate').value;
+            const nightsDisplay = document.getElementById('accommodationNightsDisplay');
             
             if (checkIn && checkOut) {{
                 const start = new Date(checkIn);
@@ -774,11 +795,15 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 
                 if (diffDays > 0) {{
-                    document.getElementById('accommodationNights').value = diffDays;
+                    nightsDisplay.textContent = String(diffDays);
+                    return diffDays;
                 }} else {{
-                    document.getElementById('accommodationNights').value = '';
+                    nightsDisplay.textContent = '-';
+                    return null;
                 }}
             }}
+            nightsDisplay.textContent = '-';
+            return null;
         }}
         
         async function saveToServer() {{
@@ -821,12 +846,13 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                 passport_country: document.getElementById('passportCountry').value,
                 departure_city: document.getElementById('departureCity').value,
                 travel_method: document.getElementById('travelMethod').value,
-                estimated_travel_cost: document.getElementById('estimatedTravelCost').value || null,
                 needs_accommodation: document.getElementById('needsAccommodation').checked,
                 check_in_date: document.getElementById('checkInDate').value || null,
                 check_out_date: document.getElementById('checkOutDate').value || null,
-                accommodation_nights: document.getElementById('accommodationNights').value || null,
-                estimated_hotel_cost: document.getElementById('estimatedHotelCost').value || null,
+                accommodation_nights: (() => {{
+                    const nights = calculateNights();
+                    return nights != null ? String(nights) : null;
+                }})(),
                 payment_email: document.getElementById('paymentEmail').value,
                 beneficiary_name: document.getElementById('beneficiaryName').value,
                 bank_name: document.getElementById('bankName').value,
@@ -847,10 +873,11 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                     const files = await response.json();
                     
                     uploadedFiles = {{ cv: [], photo: [], passport: [], flight: [] }};
+                    const speakerCategories = ['cv', 'photo', 'passport', 'flight'];
                     
                     files.forEach(file => {{
                         const category = file.file_category || 'other';
-                        if (!uploadedFiles[category]) uploadedFiles[category] = [];
+                        if (!speakerCategories.includes(category)) return;
                         uploadedFiles[category].push({{
                             id: file.id,
                             name: file.original_filename,

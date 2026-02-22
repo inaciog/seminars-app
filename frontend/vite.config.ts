@@ -16,6 +16,23 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      // Speaker token pages are served by FastAPI (public, no auth)
+      '/speaker': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/faculty': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/img': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/public': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

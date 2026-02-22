@@ -111,14 +111,19 @@ export function AddSpeakerModal({ planId, onClose }: AddSpeakerModalProps) {
       
       // Add availability if date ranges are selected
       if (dateRanges.length > 0) {
-        const availabilities = dateRanges.map(range => ({
-          start_date: range.start.toISOString().split('T')[0],
-          end_date: range.end.toISOString().split('T')[0],
-          preference: 'available',
-          earliest_time: earliestTime || undefined,
-          latest_time: latestTime || undefined,
-          notes: notes || undefined,
-        }));
+        // Backend expects one availability item per date ({ date, preference }).
+        const availabilities = dateRanges.flatMap((range) => {
+          const dates: { date: string; preference: string }[] = [];
+          const current = new Date(range.start);
+          while (current <= range.end) {
+            dates.push({
+              date: current.toISOString().split('T')[0],
+              preference: 'available',
+            });
+            current.setDate(current.getDate() + 1);
+          }
+          return dates;
+        });
         
         await fetchWithAuth(`/api/v1/seminars/speaker-suggestions/${suggestion.id}/availability`, {
           method: 'POST',

@@ -2,6 +2,19 @@
 UM-Branded HTML Templates for Public Pages
 """
 
+def get_external_header_with_logos():
+    """Header HTML with university and economics department logos for external pages."""
+    return """
+    <div class="header-logos">
+        <div class="header-logos-inner">
+            <div class="logo-wrap"><img src="/img/UMLogo.png" alt="University of Macau" class="logo logo-um" /></div>
+            <div class="logo-wrap"><img src="/img/deptEconLogo.png" alt="Department of Economics" class="logo logo-econ" /></div>
+        </div>
+        <h1>University of Macau</h1>
+        <div class="subtitle">Department of Economics · Faculty of Social Sciences</div>
+    </div>
+    """
+
 def get_um_styles():
     return """
     <style>
@@ -1207,20 +1220,31 @@ def get_speaker_info_page_html(speaker_name, speaker_email, speaker_affiliation,
 </html>"""
 
 def get_invalid_token_html():
-    return """<!DOCTYPE html>
+    header = get_external_header_with_logos()
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Invalid Link - University of Macau</title>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; text-align: center; padding: 50px; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; text-align: center; padding: 50px; margin: 0; }}
+        .header {{ background: #003366; color: white; padding: 24px 20px; text-align: center; margin: -50px -50px 50px -50px; }}
+        .header-logos {{ display: flex; flex-direction: column; align-items: center; gap: 12px; }}
+        .header-logos-inner {{ display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }}
+        .header .logo-wrap {{ background: white; padding: 16px 28px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }}
+        .header .logo {{ height: 72px; width: auto; object-fit: contain; display: block; }}
+        .header .logo-um {{ max-height: 80px; }}
+        .header .logo-econ {{ max-height: 72px; }}
+        .header h1 {{ font-size: 26px; font-weight: 600; margin: 0; }}
+        .header .subtitle {{ font-size: 15px; opacity: .9; margin-top: 6px; }}
         .container {{ max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }}
-        h1 {{ color: #003366; font-size: 48px; margin-bottom: 20px; }}
+        .container h1 {{ color: #003366; font-size: 48px; margin-bottom: 20px; }}
         p {{ font-size: 18px; color: #666; }}
     </style>
 </head>
 <body>
+    <div class="header">{header}</div>
     <div class="container">
         <h1>❌ Invalid Link</h1>
         <p>This link is no longer valid or has expired.</p>

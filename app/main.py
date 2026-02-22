@@ -6,6 +6,9 @@ authentication service (inacio-auth.fly.dev).
 """
 
 import os
+import json
+import subprocess
+from urllib.parse import quote
 import uuid
 import shutil
 import logging
@@ -30,7 +33,8 @@ from app.logging_config import init_logging, log_audit, log_request
 
 # Import templates
 from app.templates import (
-    get_invalid_token_html
+    get_invalid_token_html,
+    get_external_header_with_logos,
 )
 from app.availability_page import get_availability_page_html
 
@@ -63,9 +67,13 @@ class Settings(BaseSettings):
     uploads_dir: str = "/data/uploads"
     auth_service_url: str = "https://inacio-auth.fly.dev"
     app_url: str = "https://seminars-app.fly.dev"
-    
+    feature_semester_plan_v2: bool = False
+    fallback_mirror_dir: str = "fallback-mirror"
+    fallback_mirror_git_enabled: bool = False
+
     class Config:
         env_file = ".env"
+        extra = "ignore"  # Ignore PORT, HOST, etc. from .env (used by Fly.io, not by app)
 
 settings = Settings()
 
@@ -243,7 +251,7 @@ class SpeakerToken(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     token: str = Field(index=True, unique=True)
     suggestion_id: int = Field(foreign_key="speaker_suggestions.id")
-    token_type: str  # 'availability' or 'info'
+    token_type: str  # 'availability', 'info', or 'status'
     seminar_id: Optional[int] = Field(default=None, foreign_key="seminars.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     expires_at: datetime
@@ -285,6 +293,33 @@ class SeminarDetails(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     seminar: Seminar = Relationship()
+
+class SpeakerWorkflow(SQLModel, table=True):
+    __tablename__ = "speaker_workflows"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    suggestion_id: int = Field(foreign_key="speaker_suggestions.id", unique=True, index=True)
+    request_available_dates_sent: bool = Field(default=False)
+    availability_dates_received: bool = Field(default=False)
+    speaker_notified_of_date: bool = Field(default=False)
+    meal_ok: bool = Field(default=False)
+    guesthouse_hotel_reserved: bool = Field(default=False)
+    proposal_submitted: bool = Field(default=False)
+    proposal_approved: bool = Field(default=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ActivityEvent(SQLModel, table=True):
+    __tablename__ = "activity_events"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    semester_plan_id: Optional[int] = Field(default=None, foreign_key="semester_plans.id", index=True)
+    event_type: str = Field(index=True)
+    summary: str
+    entity_type: Optional[str] = None
+    entity_id: Optional[int] = None
+    actor: Optional[str] = None
+    details_json: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 # ============================================================================
 # Pydantic Models
@@ -385,8 +420,8 @@ class SeminarResponse(BaseModel):
 # Semester Planning Pydantic Models
 class SemesterPlanCreate(BaseModel):
     name: str
-    academic_year: str
-    semester: str
+    academic_year: str = ""
+    semester: str = ""
     default_room: str = "TBD"
     default_start_time: str = "14:00"
     default_duration_minutes: int = 60
@@ -397,8 +432,8 @@ class SemesterPlanResponse(BaseModel):
     
     id: int
     name: str
-    academic_year: str
-    semester: str
+    academic_year: str = ""
+    semester: str = ""
     default_room: str
     default_start_time: str
     default_duration_minutes: int
@@ -572,6 +607,26 @@ class SeminarDetailsResponse(BaseModel):
     estimated_hotel_cost: Optional[float]
     updated_at: datetime
 
+class SpeakerWorkflowUpdate(BaseModel):
+    request_available_dates_sent: Optional[bool] = None
+    availability_dates_received: Optional[bool] = None
+    speaker_notified_of_date: Optional[bool] = None
+    meal_ok: Optional[bool] = None
+    guesthouse_hotel_reserved: Optional[bool] = None
+    proposal_submitted: Optional[bool] = None
+    proposal_approved: Optional[bool] = None
+
+class ActivityEventResponse(BaseModel):
+    id: int
+    semester_plan_id: Optional[int]
+    event_type: str
+    summary: str
+    entity_type: Optional[str]
+    entity_id: Optional[int]
+    actor: Optional[str]
+    details: Optional[dict]
+    created_at: datetime
+
 # ============================================================================
 # Auth
 # ============================================================================
@@ -623,15 +678,15 @@ async def require_auth(request: Request, call_next):
     path = request.url.path
     
     # Skip API routes, static files, and React assets
-    if path.startswith("/api/") or path.startswith("/static/") or path.startswith("/assets/"):
+    if path.startswith("/api/") or path.startswith("/static/") or path.startswith("/assets/") or path.startswith("/img/"):
         return await call_next(request)
     
     # Skip public pages
     if path == "/public":
         return await call_next(request)
     
-    # Skip speaker token pages (public access)
-    if path.startswith("/speaker/"):
+    # Skip speaker token pages and faculty suggestion form (public access)
+    if path.startswith("/speaker/") or path.startswith("/faculty/"):
         return await call_next(request)
     
     # Check for token
@@ -644,6 +699,379 @@ async def require_auth(request: Request, call_next):
         )
     
     return await call_next(request)
+
+def get_or_create_workflow(db: Session, suggestion_id: int) -> SpeakerWorkflow:
+    stmt = select(SpeakerWorkflow).where(SpeakerWorkflow.suggestion_id == suggestion_id)
+    workflow = db.exec(stmt).first()
+    if workflow:
+        return workflow
+    workflow = SpeakerWorkflow(suggestion_id=suggestion_id)
+    db.add(workflow)
+    db.flush()
+    return workflow
+
+def record_activity(
+    db: Session,
+    event_type: str,
+    summary: str,
+    semester_plan_id: Optional[int] = None,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[int] = None,
+    actor: Optional[str] = None,
+    details: Optional[dict] = None,
+):
+    evt = ActivityEvent(
+        semester_plan_id=semester_plan_id,
+        event_type=event_type,
+        summary=summary,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        actor=actor,
+        details_json=json.dumps(details or {}, ensure_ascii=True),
+    )
+    db.add(evt)
+
+def build_speaker_status(workflow: Optional[SpeakerWorkflow], suggestion: SpeakerSuggestion) -> dict:
+    if not workflow:
+        return {
+            "code": "pending_contact",
+            "title": "Pending Initial Contact",
+            "message": "Your invitation is being prepared. You will receive an availability request soon.",
+        }
+    if not workflow.request_available_dates_sent:
+        return {
+            "code": "pending_contact",
+            "title": "Pending Initial Contact",
+            "message": "Your invitation is being prepared. You will receive an availability request soon.",
+        }
+    if workflow.request_available_dates_sent and not workflow.availability_dates_received:
+        return {
+            "code": "awaiting_availability",
+            "title": "Waiting for Your Availability",
+            "message": "Please submit your available dates using the availability link provided in our email.",
+        }
+    if workflow.availability_dates_received and not workflow.speaker_notified_of_date:
+        return {
+            "code": "scheduling",
+            "title": "Scheduling in Progress",
+            "message": "We received your availability and are finalizing the seminar date.",
+        }
+    if workflow.speaker_notified_of_date and not workflow.proposal_submitted:
+        return {
+            "code": "awaiting_proposal",
+            "title": "Date Confirmed",
+            "message": "Your seminar date is confirmed. Please submit your seminar details and proposal materials.",
+        }
+    if workflow.proposal_submitted and not workflow.proposal_approved:
+        return {
+            "code": "proposal_review",
+            "title": "Proposal Under Review",
+            "message": "Your proposal has been submitted and is currently under review.",
+        }
+    if workflow.proposal_approved:
+        logistics_ok = workflow.meal_ok and workflow.guesthouse_hotel_reserved
+        if logistics_ok:
+            return {
+                "code": "ready",
+                "title": "All Set",
+                "message": "Everything is confirmed. We look forward to your talk.",
+            }
+        return {
+            "code": "approved_pending_logistics",
+            "title": "Approved - Logistics in Progress",
+            "message": "Your proposal is approved. Remaining logistics are being finalized.",
+        }
+    return {
+        "code": "in_progress",
+        "title": "In Progress",
+        "message": f"Your seminar workflow is in progress (status: {suggestion.status}).",
+    }
+
+def refresh_fallback_mirror(db: Session):
+    mirror_dir = Path(settings.fallback_mirror_dir)
+    if not mirror_dir.is_absolute():
+        # Resolve relative to project root (parent of app/) so it works regardless of cwd
+        mirror_dir = Path(__file__).resolve().parents[1] / mirror_dir
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+
+    plans = db.exec(select(SemesterPlan).order_by(SemesterPlan.created_at.desc())).all()
+    suggestions = db.exec(select(SpeakerSuggestion).order_by(SpeakerSuggestion.created_at.desc())).all()
+    slots = db.exec(select(SeminarSlot).order_by(SeminarSlot.date.desc())).all()
+    seminars = db.exec(select(Seminar).order_by(Seminar.date.asc())).all()
+    files = db.exec(select(UploadedFile).order_by(UploadedFile.uploaded_at.desc())).all()
+    activities = db.exec(select(ActivityEvent).order_by(ActivityEvent.created_at.desc()).limit(200)).all()
+    speakers = db.exec(select(Speaker).order_by(Speaker.name)).all()
+    all_details = {d.seminar_id: d for d in db.exec(select(SeminarDetails)).all()}
+
+    def esc(value: Optional[str]) -> str:
+        text = value or ""
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def safe_filename(name: str) -> str:
+        s = "".join(c for c in (name or "file") if c.isalnum() or c in "._- ")
+        return s[:80] if s else "file"
+
+    ts = datetime.utcnow().isoformat()
+
+    # Resolve uploads dir (may be relative)
+    uploads_base = Path(settings.uploads_dir)
+    if not uploads_base.is_absolute():
+        uploads_base = Path(__file__).resolve().parents[1] / uploads_base
+
+    # Copy uploaded files to mirror for recovery (clear and re-copy to remove deleted files)
+    files_dir = mirror_dir / "files"
+    if files_dir.exists():
+        for p in files_dir.iterdir():
+            if p.is_file():
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+    files_dir.mkdir(exist_ok=True)
+    file_mirror_names: dict[int, str] = {}
+    for f in files:
+        src = uploads_base / f.storage_filename
+        if src.exists():
+            ext = Path(f.original_filename or "").suffix or ""
+            mirror_name = f"{f.id}_{safe_filename(f.original_filename or 'file')}{ext}"
+            dst = files_dir / mirror_name
+            try:
+                shutil.copy2(src, dst)
+                file_mirror_names[f.id] = f"files/{mirror_name}"
+            except Exception as e:
+                logger.warning(f"Could not copy file {f.id} to fallback mirror: {e}")
+
+    # -------------------------------------------------------------------------
+    # File 1: recovery.html - Human-readable backup for emergency recovery
+    # Full seminar and speaker content: abstract, bio, travel, etc.
+    # -------------------------------------------------------------------------
+    recovery_sections = []
+
+    # Seminars (full content)
+    for s in seminars:
+        speaker = s.speaker
+        room = s.room
+        details = all_details.get(s.id)
+        speaker_name = speaker.name if speaker else "TBD"
+        speaker_aff = speaker.affiliation or "" if speaker else ""
+        speaker_email = speaker.email or "" if speaker else ""
+        room_name = room.name if room else "TBD"
+
+        parts = [
+            f"<h2>{esc(s.title)}</h2>",
+            f"<p><strong>Date:</strong> {s.date.isoformat()} | <strong>Time:</strong> {s.start_time or ''}-{s.end_time or ''} | <strong>Room:</strong> {esc(room_name)} | <strong>Status:</strong> {esc(s.status)}</p>",
+            f"<p><strong>Speaker:</strong> {esc(speaker_name)} ({esc(speaker_aff)})" + (f" &lt;{esc(speaker_email)}&gt;" if speaker_email else "") + "</p>",
+        ]
+        if s.abstract:
+            parts.append(f"<h3>Abstract</h3><p>{esc(s.abstract)}</p>")
+        if s.paper_title:
+            parts.append(f"<p><strong>Paper title:</strong> {esc(s.paper_title)}</p>")
+        if details:
+            detail_parts = []
+            if details.check_in_date or details.check_out_date:
+                detail_parts.append(f"Travel: {details.check_in_date or '?'} to {details.check_out_date or '?'}")
+            if details.departure_city:
+                detail_parts.append(f"Departure: {esc(details.departure_city)}")
+            if details.travel_method:
+                detail_parts.append(f"Method: {esc(details.travel_method)}")
+            if details.needs_accommodation is not None:
+                detail_parts.append(f"Accommodation: {'Yes' if details.needs_accommodation else 'No'}")
+            if details.accommodation_nights:
+                detail_parts.append(f"Nights: {details.accommodation_nights}")
+            if details.payment_email:
+                detail_parts.append(f"Payment email: {esc(details.payment_email)}")
+            if details.beneficiary_name:
+                detail_parts.append(f"Beneficiary: {esc(details.beneficiary_name)}")
+            if details.bank_name:
+                detail_parts.append(f"Bank: {esc(details.bank_name)}")
+            if detail_parts:
+                parts.append(f"<h3>Logistics</h3><p>{' | '.join(detail_parts)}</p>")
+
+        # Files for this seminar (with links to mirrored copies)
+        sem_files = [f for f in files if f.seminar_id == s.id]
+        if sem_files:
+            file_links = []
+            for f in sem_files:
+                if f.id in file_mirror_names:
+                    file_links.append(f'<a href="{quote(file_mirror_names[f.id], safe="/")}">{esc(f.original_filename)}</a>')
+                else:
+                    file_links.append(esc(f.original_filename))
+            parts.append(f"<p><strong>Files:</strong> {', '.join(file_links)}</p>")
+
+        recovery_sections.append(f'<div class="seminar-block">{"\n".join(parts)}</div>')
+
+    recovery_seminars_html = "\n\n".join(recovery_sections) if recovery_sections else "<p>No seminars.</p>"
+
+    # Speakers (full content)
+    speaker_sections = []
+    for sp in speakers:
+        parts = [
+            f"<h3>{esc(sp.name)}</h3>",
+            f"<p><strong>Affiliation:</strong> {esc(sp.affiliation or '-')} | <strong>Email:</strong> {esc(sp.email or '-')}</p>",
+        ]
+        if sp.website:
+            parts.append(f"<p><strong>Website:</strong> {esc(sp.website)}</p>")
+        if sp.bio:
+            parts.append(f"<p>{esc(sp.bio)}</p>")
+        speaker_sections.append("\n".join(parts))
+
+    recovery_speakers_html = "\n<hr>\n".join(speaker_sections) if speaker_sections else "<p>No speakers.</p>"
+
+    # Speaker suggestions (planned speakers)
+    sugg_sections = []
+    for sg in suggestions:
+        sugg_sections.append(
+            f"<p><strong>{esc(sg.speaker_name)}</strong> ({esc(sg.speaker_affiliation or '-')}) "
+            f"| Plan {sg.semester_plan_id or '-'} | Status: {esc(sg.status)}<br>"
+            f"Suggested topic: {esc(sg.suggested_topic or '-')}"
+            + (f" | Reason: {esc(sg.reason)}" if sg.reason else "")
+            + "</p>"
+        )
+    recovery_suggestions_html = "\n".join(sugg_sections) if sugg_sections else "<p>No suggestions.</p>"
+
+    # All uploaded files (with links to mirrored copies)
+    if files:
+        all_file_links = []
+        for f in sorted(files, key=lambda x: (x.seminar_id, x.original_filename or "")):
+            label = f"{esc(f.original_filename)} (seminar {f.seminar_id})"
+            if f.id in file_mirror_names:
+                all_file_links.append(f'<a href="{quote(file_mirror_names[f.id], safe="/")}">{label}</a>')
+            else:
+                all_file_links.append(label)
+        recovery_files_html = "<p>" + " | ".join(all_file_links) + "</p>"
+    else:
+        recovery_files_html = "<p>No uploaded files.</p>"
+
+    recovery_html = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seminars Recovery Backup</title>
+<style>body{{font-family:Georgia,serif;margin:24px;max-width:800px;}}h1{{border-bottom:1px solid #ccc;}}h2{{margin-top:1.5em;}}h3{{margin-top:1em;font-size:1em;}}p{{line-height:1.5;}}.seminar-block{{margin-bottom:2em;padding-bottom:1.5em;border-bottom:1px solid #eee;}}</style></head>
+<body>
+<h1>Seminars Recovery Backup</h1>
+<p><em>Human-readable backup for emergency recovery. Generated: {ts} UTC</em></p>
+<p>Use this file to recover seminar and speaker information if the app stops working.</p>
+
+<h2>Seminar Series</h2>
+{recovery_seminars_html}
+
+<h2>Speakers</h2>
+{recovery_speakers_html}
+
+<h2>Speaker Suggestions (Planning)</h2>
+{recovery_suggestions_html}
+
+<h2>Uploaded Files</h2>
+{recovery_files_html}
+</body></html>"""
+
+    (mirror_dir / "recovery.html").write_text(recovery_html, encoding="utf-8")
+
+    # -------------------------------------------------------------------------
+    # File 2: changelog.html - Technical/audit tracking
+    # Plans, slots, suggestions, activity, files
+    # -------------------------------------------------------------------------
+    rows_plans = "".join(
+        f"<tr><td>{p.id}</td><td>{esc(p.name)}</td><td>{esc(p.status)}</td><td>{esc(p.default_room)}</td></tr>"
+        for p in plans
+    )
+    rows_suggestions = "".join(
+        f"<tr><td>{s.id}</td><td>{s.semester_plan_id or ''}</td><td>{esc(s.speaker_name)}</td><td>{esc(s.speaker_affiliation)}</td><td>{esc(s.status)}</td></tr>"
+        for s in suggestions
+    )
+    rows_slots = "".join(
+        f"<tr><td>{sl.id}</td><td>{sl.semester_plan_id}</td><td>{sl.date.isoformat()}</td><td>{esc(sl.start_time)}-{esc(sl.end_time)}</td><td>{esc(sl.room)}</td><td>{esc(sl.status)}</td></tr>"
+        for sl in slots
+    )
+    rows_seminars = "".join(
+        f"<tr><td>{s.id}</td><td>{esc(s.title)}</td><td>{s.date.isoformat()}</td><td>{esc(s.status)}</td><td>{getattr(s, 'slot_id', '') or ''}</td></tr>"
+        for s in seminars
+    )
+    rows_files = "".join(
+        f"<tr><td>{f.id}</td><td>{f.seminar_id}</td><td>{esc(f.original_filename)}</td><td>{esc(f.file_category)}</td><td>{f.uploaded_at.isoformat()}</td></tr>"
+        for f in files
+    )
+    rows_activities = "".join(
+        f"<tr><td>{a.created_at.isoformat()}</td><td>{esc(a.event_type)}</td><td>{esc(a.summary)}</td><td>{a.semester_plan_id or ''}</td></tr>"
+        for a in activities
+    )
+
+    changelog_html = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seminars Changelog &amp; Audit</title>
+<style>body{{font-family:Arial,sans-serif;margin:24px;}}table{{border-collapse:collapse;width:100%;margin-bottom:24px;}}th,td{{border:1px solid #ddd;padding:6px 8px;font-size:13px;}}th{{background:#f5f5f5;text-align:left;}}</style></head>
+<body>
+<h1>Seminars Changelog &amp; Audit</h1>
+<p>Generated: {ts} UTC. Tracks plans, slots, suggestions, activity, and files.</p>
+
+<h2>Semester Plans</h2><table><tr><th>ID</th><th>Name</th><th>Status</th><th>Default Room</th></tr>{rows_plans}</table>
+<h2>Speaker Suggestions</h2><table><tr><th>ID</th><th>Plan</th><th>Speaker</th><th>Affiliation</th><th>Status</th></tr>{rows_suggestions}</table>
+<h2>Slots</h2><table><tr><th>ID</th><th>Plan</th><th>Date</th><th>Time</th><th>Room</th><th>Status</th></tr>{rows_slots}</table>
+<h2>Seminars</h2><table><tr><th>ID</th><th>Title</th><th>Date</th><th>Status</th><th>Slot</th></tr>{rows_seminars}</table>
+<h2>Files</h2><table><tr><th>ID</th><th>Seminar</th><th>Filename</th><th>Category</th><th>Uploaded At</th></tr>{rows_files}</table>
+<h2>Recent Activity</h2><table><tr><th>Time</th><th>Type</th><th>Summary</th><th>Plan</th></tr>{rows_activities}</table>
+</body></html>"""
+
+    (mirror_dir / "changelog.html").write_text(changelog_html, encoding="utf-8")
+
+    # index.html links to both
+    index_html = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seminars Fallback Mirror</title>
+<style>body{{font-family:Arial,sans-serif;margin:24px;}}a{{color:#06c;}}ul{{line-height:2;}}</style></head>
+<body>
+<h1>Seminars Fallback Mirror</h1>
+<p>Generated: {ts} UTC</p>
+<ul>
+<li><a href="recovery.html"><strong>Recovery</strong></a> — Human-readable backup: seminars (abstract, speaker, logistics), speakers, suggestions. Use for emergency recovery.</li>
+<li><a href="changelog.html"><strong>Changelog</strong></a> — Technical tracking: plans, slots, activity, files.</li>
+</ul>
+</body></html>"""
+
+    (mirror_dir / "index.html").write_text(index_html, encoding="utf-8")
+
+    if settings.fallback_mirror_git_enabled:
+        try:
+            project_root = Path(__file__).resolve().parents[1]
+            logger.info("Fallback mirror: committing and pushing to git")
+            mirror_rel = Path(settings.fallback_mirror_dir)
+            if not (project_root / ".git").exists():
+                logger.warning("Fallback mirror git skipped: not a git repository")
+            else:
+                r = subprocess.run(
+                    ["git", "add", str(mirror_rel)],
+                    cwd=str(project_root),
+                    capture_output=True,
+                    text=True,
+                )
+                if r.returncode != 0:
+                    logger.error(f"Fallback mirror git add failed: {r.stderr or r.stdout}")
+                else:
+                    r = subprocess.run(
+                        ["git", "commit", "-m", f"Update fallback mirror {datetime.utcnow().isoformat()}"],
+                        cwd=str(project_root),
+                        capture_output=True,
+                        text=True,
+                    )
+                    if r.returncode == 0:
+                        r = subprocess.run(
+                            ["git", "push"],
+                            cwd=str(project_root),
+                            capture_output=True,
+                            text=True,
+                        )
+                        if r.returncode != 0:
+                            logger.error(f"Fallback mirror git push failed: {r.stderr or r.stdout}")
+                    elif "nothing to commit" not in (r.stderr or "").lower() and "nothing to commit" not in (r.stdout or "").lower():
+                        logger.warning(f"Fallback mirror git commit: {r.stderr or r.stdout}")
+        except Exception as e:
+            logger.error(f"Fallback mirror git update failed: {e}", exc_info=True)
+
+def ensure_legacy_writes_allowed():
+    if settings.feature_semester_plan_v2:
+        raise HTTPException(
+            status_code=403,
+            detail="Legacy write APIs are disabled in V2 mode. Use semester-plan workflows.",
+        )
 
 # ============================================================================
 # Data Migration
@@ -764,6 +1192,12 @@ async def lifespan(app: FastAPI):
     
     # Run data migration
     await run_data_migration(eng)
+    # Build initial fallback mirror snapshot
+    with Session(eng) as session:
+        try:
+            refresh_fallback_mirror(session)
+        except Exception as e:
+            logger.error(f"Initial fallback mirror generation failed: {e}")
     
     yield
 
@@ -813,11 +1247,16 @@ async def log_requests(request: Request, call_next):
     
     return response
 
-FRONTEND_DIST_DIR = Path("frontend/dist")
+_APP_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _APP_DIR.parent
+FRONTEND_DIST_DIR = _PROJECT_ROOT / "frontend" / "dist"
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
+IMG_DIR = _PROJECT_ROOT / "img"
 
 # check_dir=False avoids import-time crashes when frontend artifacts are not bundled yet.
 app.mount("/assets", StaticFiles(directory=str(FRONTEND_ASSETS_DIR), check_dir=False), name="assets")
+if IMG_DIR.exists():
+    app.mount("/img", StaticFiles(directory=str(IMG_DIR)), name="img")
 if not FRONTEND_ASSETS_DIR.exists():
     logger.warning(f"Frontend assets directory not found at startup: {FRONTEND_ASSETS_DIR}")
 
@@ -924,12 +1363,11 @@ async def public_page(db: Session = Depends(get_db)):
 # Speaker token pages (public, no auth required)
 @app.get("/speaker/availability/{token}", response_class=HTMLResponse)
 async def speaker_availability_page(token: str, db: Session = Depends(get_db)):
-    """Public page for speaker to submit availability."""
-    # Verify token
+    """Public page for speaker to submit availability. Always updatable (no used_at check)."""
+    # Verify token - allow viewing even if previously submitted (speakers can edit anytime)
     statement = select(SpeakerToken).where(
         SpeakerToken.token == token,
         SpeakerToken.expires_at > datetime.utcnow(),
-        SpeakerToken.used_at.is_(None),
         SpeakerToken.token_type == "availability"
     )
     db_token = db.exec(statement).first()
@@ -1101,6 +1539,7 @@ async def list_speakers(db: Session = Depends(get_db), user: dict = Depends(get_
 
 @app.post("/api/speakers", response_model=SpeakerResponse)
 async def create_speaker(speaker: SpeakerCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    ensure_legacy_writes_allowed()
     db_speaker = Speaker(**speaker.model_dump())
     db.add(db_speaker)
     db.commit()
@@ -1116,6 +1555,7 @@ async def get_speaker(speaker_id: int, db: Session = Depends(get_db), user: dict
 
 @app.put("/api/speakers/{speaker_id}", response_model=SpeakerResponse)
 async def update_speaker(speaker_id: int, update: SpeakerCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    ensure_legacy_writes_allowed()
     speaker = db.get(Speaker, speaker_id)
     if not speaker:
         raise HTTPException(status_code=404, detail="Speaker not found")
@@ -1129,9 +1569,11 @@ async def update_speaker(speaker_id: int, update: SpeakerCreate, db: Session = D
 
 @app.delete("/api/speakers/{speaker_id}")
 async def delete_speaker(speaker_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    ensure_legacy_writes_allowed()
     result = delete_speaker_robust(speaker_id, db)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
+    refresh_fallback_mirror(db)
     return result
 
 # Additional endpoints for frontend compatibility (/api/v1/seminars/*)
@@ -1166,6 +1608,7 @@ async def delete_speaker_v1(speaker_id: int, db: Session = Depends(get_db), user
     result = delete_speaker_robust(speaker_id, db)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
+    refresh_fallback_mirror(db)
     return result
 
 # ============================================================================
@@ -1179,6 +1622,7 @@ async def list_rooms(db: Session = Depends(get_db), user: dict = Depends(get_cur
 
 @app.post("/api/rooms", response_model=RoomResponse)
 async def create_room(room: RoomCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    ensure_legacy_writes_allowed()
     db_room = Room(**room.model_dump())
     db.add(db_room)
     db.commit()
@@ -1187,9 +1631,11 @@ async def create_room(room: RoomCreate, db: Session = Depends(get_db), user: dic
 
 @app.delete("/api/rooms/{room_id}")
 async def delete_room(room_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    ensure_legacy_writes_allowed()
     result = delete_room_robust(room_id, db)
     if not result["success"]:
         raise HTTPException(status_code=404, detail=result["error"])
+    refresh_fallback_mirror(db)
     return result
 
 # ============================================================================
@@ -1220,6 +1666,7 @@ async def list_seminars(
 
 @app.post("/api/seminars", response_model=SeminarResponse)
 async def create_seminar(seminar: SeminarCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    ensure_legacy_writes_allowed()
     db_seminar = Seminar(**seminar.model_dump())
     db.add(db_seminar)
     db.commit()
@@ -1237,6 +1684,7 @@ async def get_seminar(seminar_id: int, db: Session = Depends(get_db), user: dict
 
 @app.put("/api/seminars/{seminar_id}", response_model=SeminarResponse)
 async def update_seminar(seminar_id: int, update: SeminarUpdate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    ensure_legacy_writes_allowed()
     seminar = db.get(Seminar, seminar_id)
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
@@ -1246,15 +1694,26 @@ async def update_seminar(seminar_id: int, update: SeminarUpdate, db: Session = D
         setattr(seminar, key, value)
     
     seminar.updated_at = datetime.utcnow()
+    record_activity(
+        db=db,
+        event_type="SEMINAR_UPDATED",
+        summary=f"Updated seminar '{seminar.title}'",
+        entity_type="seminar",
+        entity_id=seminar.id,
+        actor=user.get("id"),
+    )
     db.commit()
     db.refresh(seminar)
+    refresh_fallback_mirror(db)
     return seminar
 
 @app.delete("/api/seminars/{seminar_id}")
 async def delete_seminar(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    ensure_legacy_writes_allowed()
     result = delete_seminar_robust(seminar_id, db)
     if not result["success"]:
         raise HTTPException(status_code=404, detail=result["error"])
+    refresh_fallback_mirror(db)
     return result
 
 # Additional endpoints for frontend compatibility (/api/v1/seminars/*)
@@ -1313,8 +1772,17 @@ async def update_seminar_v1(seminar_id: int, update: SeminarUpdate, db: Session 
         setattr(seminar, key, value)
     
     seminar.updated_at = datetime.utcnow()
+    record_activity(
+        db=db,
+        event_type="SEMINAR_UPDATED",
+        summary=f"Updated seminar '{seminar.title}'",
+        entity_type="seminar",
+        entity_id=seminar.id,
+        actor=user.get("id"),
+    )
     db.commit()
     db.refresh(seminar)
+    refresh_fallback_mirror(db)
     return seminar
 
 @app.delete("/api/v1/seminars/seminars/{seminar_id}")
@@ -1322,6 +1790,7 @@ async def delete_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user
     result = delete_seminar_robust(seminar_id, db)
     if not result["success"]:
         raise HTTPException(status_code=404, detail=result["error"])
+    refresh_fallback_mirror(db)
     return result
 
 # Seminar details endpoints
@@ -1455,8 +1924,17 @@ async def update_seminar_details_v1(
     details.updated_at = datetime.utcnow()
     seminar.updated_at = datetime.utcnow()
     
+    record_activity(
+        db=db,
+        event_type="SEMINAR_UPDATED",
+        summary=f"Updated seminar details for '{seminar.title}'",
+        entity_type="seminar",
+        entity_id=seminar.id,
+        actor=user.get("id"),
+    )
     db.commit()
     db.refresh(details)
+    refresh_fallback_mirror(db)
     
     return {"success": True, "message": "Details updated successfully"}
 
@@ -1473,8 +1951,17 @@ async def list_semester_plans(db: Session = Depends(get_db), user: dict = Depend
 async def create_semester_plan(plan: SemesterPlanCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     db_plan = SemesterPlan(**plan.model_dump())
     db.add(db_plan)
+    record_activity(
+        db=db,
+        event_type="SEMESTER_PLAN_CREATED",
+        summary=f"Created semester plan '{db_plan.name}'",
+        semester_plan_id=None,
+        entity_type="semester_plan",
+        actor=user.get("id"),
+    )
     db.commit()
     db.refresh(db_plan)
+    refresh_fallback_mirror(db)
     return db_plan
 
 @app.get("/api/v1/seminars/semester-plans/{plan_id}", response_model=SemesterPlanResponse)
@@ -1492,9 +1979,18 @@ async def update_semester_plan(plan_id: int, update: SemesterPlanCreate, db: Ses
     
     for key, value in update.model_dump().items():
         setattr(plan, key, value)
-    
+    record_activity(
+        db=db,
+        event_type="SEMESTER_PLAN_UPDATED",
+        summary=f"Updated semester plan '{plan.name}'",
+        semester_plan_id=plan.id,
+        entity_type="semester_plan",
+        entity_id=plan.id,
+        actor=user.get("id"),
+    )
     db.commit()
     db.refresh(plan)
+    refresh_fallback_mirror(db)
     return plan
 
 @app.delete("/api/v1/seminars/semester-plans/{plan_id}")
@@ -1502,6 +1998,7 @@ async def delete_semester_plan(plan_id: int, db: Session = Depends(get_db), user
     result = delete_semester_plan_robust(plan_id, db)
     if not result["success"]:
         raise HTTPException(status_code=404, detail=result["error"])
+    refresh_fallback_mirror(db)
     return result
 
 # ============================================================================
@@ -1517,8 +2014,17 @@ async def list_slots(plan_id: int, db: Session = Depends(get_db), user: dict = D
 async def create_slot(plan_id: int, slot: SeminarSlotCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     db_slot = SeminarSlot(semester_plan_id=plan_id, **slot.model_dump())
     db.add(db_slot)
+    record_activity(
+        db=db,
+        event_type="SLOT_CREATED",
+        summary=f"Added slot on {db_slot.date.isoformat()} at {db_slot.start_time}",
+        semester_plan_id=plan_id,
+        entity_type="slot",
+        actor=user.get("id"),
+    )
     db.commit()
     db.refresh(db_slot)
+    refresh_fallback_mirror(db)
     return db_slot
 
 @app.put("/api/v1/seminars/slots/{slot_id}", response_model=SeminarSlotResponse)
@@ -1532,6 +2038,7 @@ async def update_slot(slot_id: int, update: SeminarSlotCreate, db: Session = Dep
     
     db.commit()
     db.refresh(slot)
+    refresh_fallback_mirror(db)
     return slot
 
 @app.delete("/api/v1/seminars/slots/{slot_id}")
@@ -1539,6 +2046,7 @@ async def delete_slot(slot_id: int, db: Session = Depends(get_db), user: dict = 
     result = delete_slot_robust(slot_id, db)
     if not result["success"]:
         raise HTTPException(status_code=404, detail=result["error"])
+    refresh_fallback_mirror(db)
     return result
 
 @app.post("/api/v1/seminars/slots/{slot_id}/unassign")
@@ -1549,7 +2057,17 @@ async def unassign_slot(slot_id: int, db: Session = Depends(get_db), user: dict 
     
     slot.assigned_seminar_id = None
     slot.status = "available"
+    record_activity(
+        db=db,
+        event_type="SLOT_UNASSIGNED",
+        summary=f"Unassigned seminar from slot {slot.date.isoformat()}",
+        semester_plan_id=slot.semester_plan_id,
+        entity_type="slot",
+        entity_id=slot.id,
+        actor=user.get("id"),
+    )
     db.commit()
+    refresh_fallback_mirror(db)
     return {"success": True}
 
 # ============================================================================
@@ -1595,8 +2113,21 @@ async def list_speaker_suggestions(
 async def create_speaker_suggestion(suggestion: SpeakerSuggestionCreate, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     db_suggestion = SpeakerSuggestion(**suggestion.model_dump())
     db.add(db_suggestion)
+    db.flush()
+    workflow = SpeakerWorkflow(suggestion_id=db_suggestion.id)
+    db.add(workflow)
+    record_activity(
+        db=db,
+        event_type="SPEAKER_SUGGESTED",
+        summary=f"Suggested speaker {db_suggestion.speaker_name}",
+        semester_plan_id=db_suggestion.semester_plan_id,
+        entity_type="speaker_suggestion",
+        entity_id=db_suggestion.id,
+        actor=user.get("id"),
+    )
     db.commit()
     db.refresh(db_suggestion)
+    refresh_fallback_mirror(db)
     return {
         "id": db_suggestion.id,
         "suggested_by": db_suggestion.suggested_by,
@@ -1630,6 +2161,7 @@ async def add_speaker_availability(
         db.add(db_avail)
     
     db.commit()
+    refresh_fallback_mirror(db)
     return {"success": True}
 
 @app.put("/api/v1/seminars/speaker-suggestions/{suggestion_id}", response_model=SpeakerSuggestionResponse)
@@ -1643,6 +2175,7 @@ async def update_speaker_suggestion(suggestion_id: int, update: SpeakerSuggestio
     
     db.commit()
     db.refresh(suggestion)
+    refresh_fallback_mirror(db)
     
     avail = [{"date": a.date.isoformat(), "preference": a.preference} for a in suggestion.availability]
     return {
@@ -1668,6 +2201,7 @@ async def delete_speaker_suggestion(suggestion_id: int, db: Session = Depends(ge
     result = delete_suggestion_robust(suggestion_id, db)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
+    refresh_fallback_mirror(db)
     return result
 
 # ============================================================================
@@ -1713,7 +2247,21 @@ async def create_availability_token(
         expires_at=expires_at
     )
     db.add(db_token)
+    workflow = get_or_create_workflow(db, suggestion_id)
+    workflow.request_available_dates_sent = True
+    workflow.updated_at = datetime.utcnow()
+    db.add(workflow)
+    record_activity(
+        db=db,
+        event_type="AVAILABILITY_LINK_CREATED",
+        summary=f"Created availability link for {suggestion.speaker_name}",
+        semester_plan_id=suggestion.semester_plan_id,
+        entity_type="speaker_suggestion",
+        entity_id=suggestion.id,
+        actor=user.get("id"),
+    )
     db.commit()
+    refresh_fallback_mirror(db)
     
     logger.info(f"Availability token created successfully: {token[:8]}... for suggestion {suggestion_id}")
     
@@ -1731,21 +2279,64 @@ async def create_info_token(
     
     logger.info(f"Creating info token - suggestion_id: {suggestion_id}, seminar_id: {seminar_id}, user: {user.get('id')}")
     
-    if not suggestion_id:
-        logger.warning("Info token creation failed: suggestion_id is required")
-        raise HTTPException(status_code=400, detail="suggestion_id is required")
-    
-    suggestion = db.get(SpeakerSuggestion, suggestion_id)
-    if not suggestion:
-        logger.warning(f"Info token creation failed: Suggestion {suggestion_id} not found")
-        raise HTTPException(status_code=404, detail="Suggestion not found")
-    
-    # Validate seminar_id if provided
+    if not suggestion_id and not seminar_id:
+        logger.warning("Info token creation failed: seminar_id or suggestion_id is required")
+        raise HTTPException(status_code=400, detail="seminar_id or suggestion_id is required")
+
+    seminar = None
     if seminar_id:
         seminar = db.get(Seminar, seminar_id)
         if not seminar:
             logger.warning(f"Info token creation failed: Seminar {seminar_id} not found")
             raise HTTPException(status_code=404, detail="Seminar not found")
+
+    suggestion = None
+    if suggestion_id:
+        suggestion = db.get(SpeakerSuggestion, suggestion_id)
+        if not suggestion:
+            logger.warning(f"Info token creation failed: Suggestion {suggestion_id} not found")
+            raise HTTPException(status_code=404, detail="Suggestion not found")
+    elif seminar_id:
+        # 1) Prefer the suggestion explicitly assigned to the seminar's slot
+        slot_stmt = select(SeminarSlot).where(SeminarSlot.assigned_seminar_id == seminar_id)
+        slot = db.exec(slot_stmt).first()
+        if slot and slot.assigned_suggestion_id:
+            suggestion = db.get(SpeakerSuggestion, slot.assigned_suggestion_id)
+
+        # 2) Otherwise, try to resolve by seminar speaker_id
+        if not suggestion and seminar and seminar.speaker_id:
+            suggestion_stmt = select(SpeakerSuggestion).where(
+                SpeakerSuggestion.speaker_id == seminar.speaker_id
+            ).order_by(SpeakerSuggestion.id.desc())
+            suggestion = db.exec(suggestion_stmt).first()
+
+        # 3) As a fallback for manually-created seminars, create a synthetic suggestion
+        if not suggestion and seminar:
+            speaker = db.get(Speaker, seminar.speaker_id)
+            if not speaker:
+                raise HTTPException(status_code=404, detail="Seminar speaker not found")
+
+            synthetic = SpeakerSuggestion(
+                suggested_by="System",
+                speaker_id=speaker.id,
+                speaker_name=speaker.name,
+                speaker_email=speaker.email,
+                speaker_affiliation=speaker.affiliation,
+                suggested_topic=seminar.title,
+                priority="medium",
+                status="confirmed",
+                semester_plan_id=slot.semester_plan_id if slot else None
+            )
+            db.add(synthetic)
+            db.commit()
+            db.refresh(synthetic)
+            suggestion = synthetic
+
+    if not suggestion:
+        logger.warning(
+            f"Info token creation failed: Unable to resolve suggestion for seminar_id={seminar_id}, suggestion_id={suggestion_id}"
+        )
+        raise HTTPException(status_code=400, detail="Could not resolve a speaker suggestion for this seminar")
     
     # Create token
     token = generate_token()
@@ -1753,15 +2344,29 @@ async def create_info_token(
     
     db_token = SpeakerToken(
         token=token,
-        suggestion_id=suggestion_id,
+        suggestion_id=suggestion.id,
         seminar_id=seminar_id,
         token_type='info',
         expires_at=expires_at
     )
     db.add(db_token)
+    workflow = get_or_create_workflow(db, suggestion.id)
+    workflow.speaker_notified_of_date = True
+    workflow.updated_at = datetime.utcnow()
+    db.add(workflow)
+    record_activity(
+        db=db,
+        event_type="INFO_LINK_CREATED",
+        summary=f"Created seminar info link for {suggestion.speaker_name}",
+        semester_plan_id=suggestion.semester_plan_id,
+        entity_type="speaker_suggestion",
+        entity_id=suggestion.id,
+        actor=user.get("id"),
+    )
     db.commit()
+    refresh_fallback_mirror(db)
     
-    logger.info(f"Info token created successfully: {token[:8]}... for suggestion {suggestion_id}")
+    logger.info(f"Info token created successfully: {token[:8]}... for suggestion {suggestion.id}")
     
     return {"link": f"/speaker/info/{token}", "token": token}
 
@@ -1808,7 +2413,7 @@ async def submit_speaker_availability(
     data: SpeakerAvailabilitySubmit,
     db: Session = Depends(get_db)
 ):
-    """Submit availability using a speaker token."""
+    """Submit availability using a speaker token. Replaces existing availability (always updatable)."""
     statement = select(SpeakerToken).where(
         SpeakerToken.token == token,
         SpeakerToken.token_type == 'availability',
@@ -1819,7 +2424,13 @@ async def submit_speaker_availability(
     if not db_token:
         raise HTTPException(status_code=404, detail="Invalid or expired token")
     
-    # Add availability entries
+    # Replace existing availability: delete old entries, add new ones
+    suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+    if suggestion:
+        for avail in list(suggestion.availability):
+            db.delete(avail)
+    
+    # Add new availability entries
     for avail in data.availabilities:
         db_avail = SpeakerAvailability(
             suggestion_id=db_token.suggestion_id,
@@ -1828,10 +2439,25 @@ async def submit_speaker_availability(
         )
         db.add(db_avail)
     
-    db_token.used_at = datetime.utcnow()
+    # Do not set used_at - speakers can return and edit anytime
+    workflow = get_or_create_workflow(db, db_token.suggestion_id)
+    workflow.availability_dates_received = True
+    workflow.updated_at = datetime.utcnow()
+    db.add(workflow)
+    if suggestion:
+        record_activity(
+            db=db,
+            event_type="AVAILABILITY_SUBMITTED",
+            summary=f"Availability submitted by {suggestion.speaker_name}",
+            semester_plan_id=suggestion.semester_plan_id,
+            entity_type="speaker_suggestion",
+            entity_id=suggestion.id,
+            actor=f"token:{token[:8]}",
+        )
     db.commit()
+    refresh_fallback_mirror(db)
     
-    return {"success": True, "message": "Availability submitted successfully"}
+    return {"success": True, "message": "Availability saved successfully"}
 
 @app.get("/api/v1/seminars/speaker-tokens/{token}/availability")
 async def get_speaker_availability_by_token(token: str, db: Session = Depends(get_db)):
@@ -1882,12 +2508,12 @@ async def submit_speaker_info(
     
     if not db_token:
         raise HTTPException(status_code=404, detail="Invalid or expired token")
-    
+    suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+
     # Get or create seminar details
     seminar_id = db_token.seminar_id
     if not seminar_id:
         # If no seminar_id in token, try to find one from the suggestion
-        suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
         if suggestion and suggestion.speaker_id:
             # Find a seminar for this speaker
             stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id)
@@ -1972,7 +2598,21 @@ async def submit_speaker_info(
             speaker.name = data.speaker_name
     
     db_token.used_at = datetime.utcnow()
+    workflow = get_or_create_workflow(db, db_token.suggestion_id)
+    workflow.proposal_submitted = True
+    workflow.updated_at = datetime.utcnow()
+    db.add(workflow)
+    record_activity(
+        db=db,
+        event_type="SPEAKER_INFO_SUBMITTED",
+        summary=f"Seminar info submitted for {suggestion.speaker_name if suggestion else 'speaker'}",
+        semester_plan_id=suggestion.semester_plan_id if suggestion else None,
+        entity_type="speaker_suggestion",
+        entity_id=suggestion.id if suggestion else None,
+        actor=f"token:{token[:8]}",
+    )
     db.commit()
+    refresh_fallback_mirror(db)
     
     return {"success": True, "message": "Information submitted successfully"}
 
@@ -2153,6 +2793,8 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
                 "speaker_name": s.speaker_name,
                 "speaker_affiliation": s.speaker_affiliation,
                 "suggested_by": s.suggested_by,
+                "suggested_by_email": s.suggested_by_email,
+                "reason": s.reason,
                 "suggested_topic": s.suggested_topic,
                 "priority": s.priority,
                 "status": s.status,
@@ -2217,8 +2859,23 @@ async def assign_speaker_to_slot(
     slot.assigned_suggestion_id = suggestion.id
     slot.status = "confirmed"
     suggestion.status = "confirmed"
+    workflow = get_or_create_workflow(db, suggestion.id)
+    workflow.speaker_notified_of_date = True
+    workflow.updated_at = datetime.utcnow()
+    db.add(workflow)
+    record_activity(
+        db=db,
+        event_type="SPEAKER_ASSIGNED",
+        summary=f"Assigned {suggestion.speaker_name} to slot {slot.date.isoformat()}",
+        semester_plan_id=slot.semester_plan_id,
+        entity_type="slot",
+        entity_id=slot.id,
+        actor=user.get("id"),
+        details={"suggestion_id": suggestion.id, "seminar_id": seminar.id},
+    )
     
     db.commit()
+    refresh_fallback_mirror(db)
     return {"success": True, "seminar_id": seminar.id}
 
 @app.post("/api/v1/seminars/planning/assign-seminar")
@@ -2248,8 +2905,19 @@ async def assign_seminar_to_slot(
     slot.assigned_seminar_id = seminar.id
     slot.assigned_suggestion_id = None  # No suggestion for reassigned orphans
     slot.status = "confirmed"
+    record_activity(
+        db=db,
+        event_type="SEMINAR_ASSIGNED",
+        summary=f"Assigned seminar '{seminar.title}' to slot {slot.date.isoformat()}",
+        semester_plan_id=slot.semester_plan_id,
+        entity_type="slot",
+        entity_id=slot.id,
+        actor=user.get("id"),
+        details={"seminar_id": seminar.id},
+    )
     
     db.commit()
+    refresh_fallback_mirror(db)
     return {"success": True, "seminar_id": seminar.id}
 
 # ============================================================================
@@ -2325,6 +2993,19 @@ async def upload_file_with_token(
     uploaded = save_uploaded_file(file, seminar_id, category, db)
     log_audit("FILE_UPLOAD", f"token:{token[:8]}", {"seminar_id": seminar_id, "file": file.filename, "category": category})
     logger.info(f"File uploaded via token: {file.filename} for seminar {seminar_id}")
+    suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+    record_activity(
+        db=db,
+        event_type="FILE_UPLOADED",
+        summary=f"File uploaded by speaker: {file.filename}",
+        semester_plan_id=suggestion.semester_plan_id if suggestion else None,
+        entity_type="file",
+        entity_id=uploaded.id,
+        actor=f"token:{token[:8]}",
+        details={"filename": file.filename, "category": category},
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
     return {"success": True, "file_id": uploaded.id, "message": "File uploaded successfully"}
 
 @app.get("/api/v1/seminars/speaker-tokens/{token}/files")
@@ -2457,6 +3138,18 @@ async def delete_file_with_token(token: str, file_id: int, db: Session = Depends
     
     log_audit("FILE_DELETE", f"token:{token[:8]}", {"file_id": file_id, "filename": file_record.original_filename})
     logger.info(f"File deleted via token: {file_record.original_filename}")
+    suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+    record_activity(
+        db=db,
+        event_type="FILE_DELETED",
+        summary=f"File deleted by speaker: {file_record.original_filename}",
+        semester_plan_id=suggestion.semester_plan_id if suggestion else None,
+        entity_type="file",
+        entity_id=file_id,
+        actor=f"token:{token[:8]}",
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
     
     return {"success": True, "message": "File deleted successfully"}
 
@@ -2475,6 +3168,18 @@ async def upload_file(
     uploaded = save_uploaded_file(file, seminar_id, category, db)
     log_audit("FILE_UPLOAD", user.get('id'), {"seminar_id": seminar_id, "file": file.filename, "category": category})
     logger.info(f"File uploaded: {file.filename} for seminar {seminar_id} by {user.get('id')}")
+    slot = db.exec(select(SeminarSlot).where(SeminarSlot.assigned_seminar_id == seminar_id)).first()
+    record_activity(
+        db=db,
+        event_type="FILE_UPLOADED",
+        summary=f"File uploaded: {file.filename}",
+        semester_plan_id=slot.semester_plan_id if slot else None,
+        entity_type="file",
+        entity_id=uploaded.id,
+        actor=user.get("id"),
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
     return {"success": True, "file_id": uploaded.id}
 
 @app.get("/api/seminars/{seminar_id}/files")
@@ -2515,6 +3220,18 @@ async def upload_file_v1(
     uploaded = save_uploaded_file(file, seminar_id, file_category, db)
     log_audit("FILE_UPLOAD", user.get('id'), {"seminar_id": seminar_id, "file": file.filename, "category": file_category})
     logger.info(f"File uploaded: {file.filename} for seminar {seminar_id} by {user.get('id')}")
+    slot = db.exec(select(SeminarSlot).where(SeminarSlot.assigned_seminar_id == seminar_id)).first()
+    record_activity(
+        db=db,
+        event_type="FILE_UPLOADED",
+        summary=f"File uploaded: {file.filename}",
+        semester_plan_id=slot.semester_plan_id if slot else None,
+        entity_type="file",
+        entity_id=uploaded.id,
+        actor=user.get("id"),
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
     return {"success": True, "file_id": uploaded.id, "message": "File uploaded successfully"}
 
 # Additional files endpoints for frontend compatibility
@@ -2555,7 +3272,18 @@ async def delete_file_v1(
     # Delete from database
     db.delete(file_record)
     db.commit()
-    
+    slot = db.exec(select(SeminarSlot).where(SeminarSlot.assigned_seminar_id == seminar_id)).first()
+    record_activity(
+        db=db,
+        event_type="FILE_DELETED",
+        summary=f"File deleted: {file_record.original_filename}",
+        semester_plan_id=slot.semester_plan_id if slot else None,
+        entity_type="file",
+        entity_id=file_id,
+        actor=user.get("id"),
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
     return {"success": True, "message": "File deleted successfully"}
 
 @app.get("/api/v1/seminars/seminars/{seminar_id}/files/{file_id}/download")
@@ -2584,6 +3312,383 @@ async def download_file_v1(
         path=file_path,
         filename=file_record.original_filename,
         media_type=file_record.content_type
+    )
+
+# ============================================================================
+# API Routes - Activity, Workflow, Faculty Form, and Speaker Status
+# ============================================================================
+
+@app.get("/api/v1/seminars/activity", response_model=List[ActivityEventResponse])
+async def list_activity_events(
+    plan_id: Optional[int] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    stmt = select(ActivityEvent)
+    if plan_id is not None:
+        stmt = stmt.where(ActivityEvent.semester_plan_id == plan_id)
+    stmt = stmt.order_by(ActivityEvent.created_at.desc()).limit(limit)
+    rows = db.exec(stmt).all()
+    return [
+        ActivityEventResponse(
+            id=row.id,
+            semester_plan_id=row.semester_plan_id,
+            event_type=row.event_type,
+            summary=row.summary,
+            entity_type=row.entity_type,
+            entity_id=row.entity_id,
+            actor=row.actor,
+            details=json.loads(row.details_json) if row.details_json else None,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+@app.get("/api/v1/seminars/system/mode")
+async def seminars_system_mode(user: dict = Depends(get_current_user)):
+    return {
+        "feature_semester_plan_v2": settings.feature_semester_plan_v2,
+        "legacy_write_enabled": not settings.feature_semester_plan_v2,
+    }
+
+@app.get("/api/v1/seminars/semester-plans/{plan_id}/speaker-workflows")
+async def list_speaker_workflows(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    suggestions = db.exec(
+        select(SpeakerSuggestion)
+        .where(SpeakerSuggestion.semester_plan_id == plan_id)
+        .order_by(SpeakerSuggestion.created_at.desc())
+    ).all()
+    items = []
+    for suggestion in suggestions:
+        workflow = get_or_create_workflow(db, suggestion.id)
+        status_payload = build_speaker_status(workflow, suggestion)
+        items.append(
+            {
+                "suggestion_id": suggestion.id,
+                "speaker_name": suggestion.speaker_name,
+                "speaker_affiliation": suggestion.speaker_affiliation,
+                "speaker_email": suggestion.speaker_email,
+                "status": suggestion.status,
+                "workflow": {
+                    "request_available_dates_sent": workflow.request_available_dates_sent,
+                    "availability_dates_received": workflow.availability_dates_received,
+                    "speaker_notified_of_date": workflow.speaker_notified_of_date,
+                    "meal_ok": workflow.meal_ok,
+                    "guesthouse_hotel_reserved": workflow.guesthouse_hotel_reserved,
+                    "proposal_submitted": workflow.proposal_submitted,
+                    "proposal_approved": workflow.proposal_approved,
+                    "updated_at": workflow.updated_at.isoformat(),
+                },
+                "status_page": status_payload,
+            }
+        )
+    return {"items": items}
+
+@app.patch("/api/v1/seminars/speaker-suggestions/{suggestion_id}/workflow")
+async def update_speaker_workflow(
+    suggestion_id: int,
+    data: SpeakerWorkflowUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    suggestion = db.get(SpeakerSuggestion, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    workflow = get_or_create_workflow(db, suggestion_id)
+    for key, value in data.model_dump().items():
+        if value is not None:
+            setattr(workflow, key, value)
+    workflow.updated_at = datetime.utcnow()
+    db.add(workflow)
+    record_activity(
+        db=db,
+        event_type="WORKFLOW_UPDATED",
+        summary=f"Workflow updated for {suggestion.speaker_name}",
+        semester_plan_id=suggestion.semester_plan_id,
+        entity_type="speaker_suggestion",
+        entity_id=suggestion.id,
+        actor=user.get("id"),
+        details=data.model_dump(),
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
+    return {"success": True}
+
+@app.post("/api/v1/seminars/speaker-tokens/status")
+async def create_status_token(
+    request: dict,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    suggestion_id = request.get("suggestion_id")
+    if not suggestion_id:
+        raise HTTPException(status_code=400, detail="suggestion_id is required")
+    suggestion = db.get(SpeakerSuggestion, suggestion_id)
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    token = generate_token()
+    expires_at = datetime.utcnow() + timedelta(days=90)
+    db_token = SpeakerToken(
+        token=token,
+        suggestion_id=suggestion_id,
+        token_type="status",
+        expires_at=expires_at,
+    )
+    db.add(db_token)
+    record_activity(
+        db=db,
+        event_type="STATUS_TOKEN_CREATED",
+        summary=f"Created status link for {suggestion.speaker_name}",
+        semester_plan_id=suggestion.semester_plan_id,
+        entity_type="speaker_suggestion",
+        entity_id=suggestion.id,
+        actor=user.get("id"),
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
+    return {"link": f"/speaker/status/{token}", "token": token}
+
+@app.get("/speaker/status/{token}", response_class=HTMLResponse)
+async def speaker_status_page(token: str, db: Session = Depends(get_db)):
+    statement = select(SpeakerToken).where(
+        SpeakerToken.token == token,
+        SpeakerToken.token_type == "status",
+        SpeakerToken.expires_at > datetime.utcnow(),
+    )
+    db_token = db.exec(statement).first()
+    if not db_token:
+        return HTMLResponse(content=get_invalid_token_html(), status_code=404)
+    suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+    if not suggestion:
+        return HTMLResponse(content=get_invalid_token_html(), status_code=404)
+    workflow_stmt = select(SpeakerWorkflow).where(SpeakerWorkflow.suggestion_id == suggestion.id)
+    workflow = db.exec(workflow_stmt).first()
+    status_payload = build_speaker_status(workflow, suggestion)
+    checklist = [
+        ("Request for Available dates sent", workflow.request_available_dates_sent if workflow else False),
+        ("Availability dates received", workflow.availability_dates_received if workflow else False),
+        ("Speaker notified of his date", workflow.speaker_notified_of_date if workflow else False),
+        ("Meal OK", workflow.meal_ok if workflow else False),
+        ("Guesthouse/Hotel reserved", workflow.guesthouse_hotel_reserved if workflow else False),
+        ("Proposal submitted", workflow.proposal_submitted if workflow else False),
+        ("Proposal approved", workflow.proposal_approved if workflow else False),
+    ]
+    checklist_html = "".join(
+        f"<li>{'✅' if done else '⬜'} {label}</li>" for label, done in checklist
+    )
+    header_html = get_external_header_with_logos()
+    return HTMLResponse(
+        content=f"""<!doctype html>
+<html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Seminar Status</title><style>
+body{{font-family:Arial,sans-serif;background:#f4f6f8;padding:24px;margin:0;}}
+.header{{background:#003366;color:white;padding:24px 20px;text-align:center;margin:-24px -24px 24px -24px;}}
+.header-logos{{display:flex;flex-direction:column;align-items:center;gap:12px;}}
+.header-logos-inner{{display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap;}}
+.header .logo-wrap{{background:white;padding:16px 28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.15);}}
+.header .logo{{height:72px;width:auto;object-fit:contain;display:block;}}
+.header .logo-um{{max-height:80px;}}
+.header .logo-econ{{max-height:72px;}}
+.header h1{{font-size:26px;font-weight:600;margin:0;}}
+.header .subtitle{{font-size:15px;opacity:.9;margin-top:6px;}}
+.card{{max-width:760px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 8px rgba(0,0,0,.08);}}
+h1{{margin:0 0 8px 0;}}ul{{line-height:1.8;}}
+</style></head>
+<body><div class='header'>{header_html}</div>
+<div class='card'><h1>{suggestion.speaker_name}</h1><p><strong>{status_payload['title']}</strong></p><p>{status_payload['message']}</p>
+<p><strong>Suggested topic:</strong> {suggestion.suggested_topic or 'TBD'}</p>
+<h3>Checklist</h3><ul>{checklist_html}</ul>
+<p style='color:#666'>This page updates whenever seminar status changes.</p>
+</div></body></html>"""
+    )
+
+@app.get("/faculty/suggest-speaker/{plan_id}", response_class=HTMLResponse)
+async def faculty_suggest_speaker_page(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.get(SemesterPlan, plan_id)
+    if not plan:
+        return HTMLResponse(content="<h1>Plan not found</h1>", status_code=404)
+    header_html = get_external_header_with_logos()
+    return HTMLResponse(
+        content=f"""<!doctype html>
+<html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Suggest a Speaker - University of Macau</title><style>
+:root{{--primary:#003366;--primary-light:#0066CC;--gray-100:#f8f9fa;--gray-200:#e9ecef;--gray-600:#6c757d;--gray-800:#343a40;}}
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);min-height:100vh;padding:24px;line-height:1.6;}}
+.header{{background:var(--primary);color:white;padding:24px 20px;text-align:center;margin:-24px -24px 24px -24px;}}
+.header-logos{{display:flex;flex-direction:column;align-items:center;gap:12px;}}
+.header-logos-inner{{display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap;}}
+.header .logo-wrap{{background:white;padding:16px 28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.15);}}
+.header .logo{{height:72px;width:auto;object-fit:contain;display:block;}}
+.header .logo-um{{max-height:80px;}}
+.header .logo-econ{{max-height:72px;}}
+.header h1{{font-size:26px;font-weight:600;margin:0;}}
+.header .subtitle{{font-size:15px;opacity:.9;margin-top:6px;}}
+.container{{max-width:640px;margin:0 auto;}}
+.card{{background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.08);overflow:hidden;}}
+.card-header{{background:linear-gradient(135deg,var(--primary) 0%,var(--primary-light) 100%);color:white;padding:24px 28px;}}
+.card-header h2{{font-size:22px;font-weight:600;margin:0;}}
+.card-header p{{font-size:14px;opacity:0.95;margin-top:8px;}}
+.card-body{{padding:28px;}}
+.form-section{{margin-bottom:24px;}}
+.form-section:last-of-type{{margin-bottom:0;}}
+.form-section h3{{font-size:14px;font-weight:600;color:var(--gray-800);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px;}}
+.form-group{{margin-bottom:20px;}}
+.form-group:last-child{{margin-bottom:0;}}
+.form-label{{display:block;font-weight:500;color:var(--gray-800);margin-bottom:6px;font-size:14px;}}
+.form-label .required{{color:#dc3545;margin-left:2px;}}
+.form-input,.form-textarea{{width:100%;padding:12px 16px;border:2px solid var(--gray-200);border-radius:8px;font-size:16px;font-family:inherit;transition:border-color 0.2s;}}
+.form-input:focus,.form-textarea:focus{{outline:none;border-color:var(--primary-light);box-shadow:0 0 0 3px rgba(0,102,204,0.1);}}
+.form-textarea{{min-height:120px;resize:vertical;}}
+.form-hint{{font-size:13px;color:var(--gray-600);margin-top:6px;}}
+.form-row{{display:grid;grid-template-columns:1fr 1fr;gap:20px;}}
+@media (max-width:600px){{.form-row{{grid-template-columns:1fr;}}}}
+.btn-submit{{display:block;width:100%;padding:14px 24px;background:linear-gradient(135deg,var(--primary) 0%,var(--primary-light) 100%);color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;margin-top:8px;}}
+.btn-submit:hover{{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,51,102,0.3);}}
+.btn-submit:active{{transform:translateY(0);}}
+.plan-badge{{display:inline-block;background:rgba(255,255,255,0.2);padding:6px 12px;border-radius:6px;font-size:13px;margin-top:12px;}}
+</style></head>
+<body><div class='header'>{header_html}</div>
+<div class='container'>
+<div class='card'>
+<div class='card-header'>
+<h2>Suggest a Speaker</h2>
+<p>Recommend a colleague or contact to present in our seminar series.</p>
+<span class='plan-badge'>Plan: {plan.name}</span>
+</div>
+<div class='card-body'>
+<form method='post' action='/faculty/suggest-speaker/{plan_id}'>
+<div class='form-section'>
+<h3>Your details</h3>
+<div class='form-row'>
+<div class='form-group'><label class='form-label'>Your name <span class='required'>*</span></label><input type='text' name='faculty_name' class='form-input' required placeholder='e.g. Jane Smith' /></div>
+<div class='form-group'><label class='form-label'>Your email <span class='required'>*</span></label><input type='email' name='faculty_email' class='form-input' required placeholder='jane@um.edu.mo' /></div>
+</div>
+</div>
+<div class='form-section'>
+<h3>Speaker information</h3>
+<div class='form-row'>
+<div class='form-group'><label class='form-label'>Speaker name <span class='required'>*</span></label><input type='text' name='speaker_name' class='form-input' required placeholder='e.g. John Doe' /></div>
+<div class='form-group'><label class='form-label'>Speaker email</label><input type='email' name='speaker_email' class='form-input' placeholder='john@university.edu' /></div>
+</div>
+<div class='form-group'><label class='form-label'>Speaker affiliation</label><input type='text' name='speaker_affiliation' class='form-input' placeholder='e.g. Harvard University' /></div>
+<div class='form-group'><label class='form-label'>Suggested topic</label><input type='text' name='suggested_topic' class='form-input' placeholder='e.g. Machine Learning in Economics' /></div>
+<div class='form-group'><label class='form-label'>Reason / context</label><textarea name='reason' class='form-textarea' rows='4' placeholder='Why do you recommend this speaker? Any relevant context...'></textarea></div>
+</div>
+<button type='submit' class='btn-submit'>Submit suggestion</button>
+</form></div></div></div></body></html>"""
+    )
+
+@app.post("/api/v1/seminars/semester-plans/{plan_id}/faculty-suggestion-link")
+async def create_faculty_suggestion_link(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    plan = db.get(SemesterPlan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Semester plan not found")
+    link = f"/faculty/suggest-speaker/{plan_id}"
+    record_activity(
+        db=db,
+        event_type="FACULTY_FORM_LINK_ACCESSED",
+        summary=f"Generated faculty suggestion form link for {plan.name}",
+        semester_plan_id=plan_id,
+        entity_type="semester_plan",
+        entity_id=plan_id,
+        actor=user.get("id"),
+        details={"link": link},
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
+    return {"link": link}
+
+@app.post("/faculty/suggest-speaker/{plan_id}", response_class=HTMLResponse)
+async def faculty_suggest_speaker_submit(
+    plan_id: int,
+    faculty_name: str = Form(...),
+    faculty_email: str = Form(...),
+    speaker_name: str = Form(...),
+    speaker_email: Optional[str] = Form(None),
+    speaker_affiliation: Optional[str] = Form(None),
+    suggested_topic: Optional[str] = Form(None),
+    reason: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    plan = db.get(SemesterPlan, plan_id)
+    if not plan:
+        return HTMLResponse(content="<h1>Plan not found</h1>", status_code=404)
+    # Create a speaker for this plan suggestion flow (clean-start workflow)
+    speaker = Speaker(name=speaker_name, email=speaker_email, affiliation=speaker_affiliation)
+    db.add(speaker)
+    db.commit()
+    db.refresh(speaker)
+
+    suggestion = SpeakerSuggestion(
+        suggested_by=faculty_name,
+        suggested_by_email=faculty_email,
+        speaker_id=speaker.id,
+        speaker_name=speaker_name,
+        speaker_email=speaker_email,
+        speaker_affiliation=speaker_affiliation,
+        suggested_topic=suggested_topic,
+        reason=reason,
+        priority="medium",
+        status="pending",
+        semester_plan_id=plan_id,
+    )
+    db.add(suggestion)
+    db.flush()
+    workflow = SpeakerWorkflow(suggestion_id=suggestion.id)
+    db.add(workflow)
+    record_activity(
+        db=db,
+        event_type="FACULTY_SUGGESTION_SUBMITTED",
+        summary=f"Faculty suggestion submitted for {speaker_name}",
+        semester_plan_id=plan_id,
+        entity_type="speaker_suggestion",
+        entity_id=suggestion.id,
+        actor=faculty_email,
+    )
+    db.commit()
+    refresh_fallback_mirror(db)
+    header_html = get_external_header_with_logos()
+    return HTMLResponse(
+        content=f"""<!doctype html>
+<html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Thank you - University of Macau</title><style>
+:root{{--primary:#003366;--primary-light:#0066CC;--success:#28a745;}}
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);min-height:100vh;padding:24px;line-height:1.6;}}
+.header{{background:var(--primary);color:white;padding:24px 20px;text-align:center;margin:-24px -24px 24px -24px;}}
+.header-logos{{display:flex;flex-direction:column;align-items:center;gap:12px;}}
+.header-logos-inner{{display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap;}}
+.header .logo-wrap{{background:white;padding:16px 28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.15);}}
+.header .logo{{height:72px;width:auto;object-fit:contain;display:block;}}
+.header .logo-um{{max-height:80px;}}
+.header .logo-econ{{max-height:72px;}}
+.header h1{{font-size:26px;font-weight:600;margin:0;}}
+.header .subtitle{{font-size:15px;opacity:.9;margin-top:6px;}}
+.container{{max-width:520px;margin:0 auto;}}
+.card{{background:#fff;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.08);padding:40px;text-align:center;}}
+.success-icon{{font-size:48px;margin-bottom:16px;}}
+.card h2{{font-size:24px;color:#155724;margin-bottom:12px;}}
+.card p{{color:#6c757d;font-size:16px;margin-bottom:24px;}}
+.btn-link{{display:inline-block;padding:12px 24px;background:var(--primary);color:white;border-radius:8px;text-decoration:none;font-weight:500;transition:background 0.2s;}}
+.btn-link:hover{{background:var(--primary-light);color:white;}}
+</style></head>
+<body><div class='header'>{header_html}</div>
+<div class='container'><div class='card'>
+<div class='success-icon'>✓</div>
+<h2>Thank you</h2>
+<p>Your suggestion was submitted successfully. We will follow up with the speaker in due course.</p>
+<a href='javascript:history.back()' class='btn-link'>Submit another suggestion</a>
+</div></div></body></html>"""
     )
 
 # ============================================================================

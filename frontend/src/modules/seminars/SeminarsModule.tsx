@@ -7,7 +7,6 @@ import {
   MapPin, 
   CheckCircle,
   XCircle,
-  AlertCircle,
   LayoutGrid,
   Trash2,
   Edit,
@@ -16,13 +15,53 @@ import {
   Building2,
   Globe,
   FileText,
-  MoreHorizontal
+  MoreHorizontal,
+  ExternalLink,
+  Clock3,
+  UserPlus,
+  Link as LinkIcon,
+  FileUp,
+  FileDown,
+  Send,
+  ClipboardList
 } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 import { seminarsApi, fetchWithAuth } from '@/api/client';
 import { formatDate, formatTime, cn } from '@/lib/utils';
 import { SemesterPlanning } from './SemesterPlanning';
+import { SpeakersControlPanel } from './SpeakersControlPanel';
 import { SeminarDetailsModal } from './SeminarDetailsModal';
+import { SeminarViewPage } from './SeminarViewPage';
 import type { Seminar, Speaker } from '@/types';
+
+// Activity event type -> friendly label and icon
+const ACTIVITY_EVENT_CONFIG: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
+  SEMESTER_PLAN_CREATED: { label: 'Plan created', icon: LayoutGrid, color: 'text-blue-600 bg-blue-50' },
+  SEMESTER_PLAN_UPDATED: { label: 'Plan updated', icon: LayoutGrid, color: 'text-blue-600 bg-blue-50' },
+  SLOT_CREATED: { label: 'Date added', icon: Calendar, color: 'text-emerald-600 bg-emerald-50' },
+  SLOT_UNASSIGNED: { label: 'Slot freed', icon: Calendar, color: 'text-amber-600 bg-amber-50' },
+  SPEAKER_SUGGESTED: { label: 'Speaker suggested', icon: UserPlus, color: 'text-indigo-600 bg-indigo-50' },
+  AVAILABILITY_LINK_CREATED: { label: 'Availability link sent', icon: LinkIcon, color: 'text-purple-600 bg-purple-50' },
+  INFO_LINK_CREATED: { label: 'Info link created', icon: LinkIcon, color: 'text-purple-600 bg-purple-50' },
+  AVAILABILITY_SUBMITTED: { label: 'Availability received', icon: CheckCircle, color: 'text-green-600 bg-green-50' },
+  SPEAKER_INFO_SUBMITTED: { label: 'Speaker info submitted', icon: FileText, color: 'text-green-600 bg-green-50' },
+  SPEAKER_ASSIGNED: { label: 'Speaker assigned', icon: Users, color: 'text-teal-600 bg-teal-50' },
+  SEMINAR_ASSIGNED: { label: 'Seminar scheduled', icon: Calendar, color: 'text-teal-600 bg-teal-50' },
+  FILE_UPLOADED: { label: 'File uploaded', icon: FileUp, color: 'text-slate-600 bg-slate-50' },
+  FILE_DELETED: { label: 'File removed', icon: FileDown, color: 'text-slate-600 bg-slate-50' },
+  WORKFLOW_UPDATED: { label: 'Workflow updated', icon: ClipboardList, color: 'text-amber-600 bg-amber-50' },
+  STATUS_TOKEN_CREATED: { label: 'Status link created', icon: LinkIcon, color: 'text-purple-600 bg-purple-50' },
+  FACULTY_FORM_LINK_ACCESSED: { label: 'Faculty form shared', icon: Send, color: 'text-indigo-600 bg-indigo-50' },
+  FACULTY_SUGGESTION_SUBMITTED: { label: 'Faculty suggestion received', icon: UserPlus, color: 'text-indigo-600 bg-indigo-50' },
+};
+
+function getActivityConfig(eventType: string) {
+  return ACTIVITY_EVENT_CONFIG[eventType] ?? {
+    label: eventType.replace(/_/g, ' ').toLowerCase(),
+    icon: Clock3,
+    color: 'text-gray-600 bg-gray-50',
+  };
+}
 
 // Speaker Modal Component
 interface SpeakerModalProps {
@@ -168,10 +207,11 @@ function SpeakerModal({ speaker, onClose, onSave, isLoading }: SpeakerModalProps
 }
 
 export function SeminarsModule() {
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'speakers' | 'tasks' | 'planning' | 'other'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'activity' | 'upcoming' | 'speakers' | 'planning' | 'other'>('activity');
   const [speakerModalOpen, setSpeakerModalOpen] = useState(false);
   const [editingSpeaker, setEditingSpeaker] = useState<Speaker | null>(null);
   const [detailsSeminar, setDetailsSeminar] = useState<Seminar | null>(null);
+  const [viewPageSeminar, setViewPageSeminar] = useState<Seminar | null>(null);
   const queryClient = useQueryClient();
 
   const { data: seminars, isLoading: seminarsLoading } = useQuery({
@@ -184,9 +224,13 @@ export function SeminarsModule() {
     queryFn: seminarsApi.listSpeakers,
   });
 
-  const { data: bureaucracy } = useQuery({
-    queryKey: ['bureaucracy'],
-    queryFn: seminarsApi.checkBureaucracy,
+  const { data: activities = [], isLoading: activitiesLoading } = useQuery({
+    queryKey: ['recent-activity'],
+    queryFn: async () => {
+      const response = await fetchWithAuth('/api/v1/seminars/activity?limit=100');
+      if (!response.ok) throw new Error('Failed to fetch activity');
+      return response.json();
+    },
   });
 
   const updateStatusMutation = useMutation({
@@ -194,7 +238,6 @@ export function SeminarsModule() {
       seminarsApi.updateSeminar(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['seminars'] });
-      queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
     },
   });
 
@@ -212,7 +255,6 @@ export function SeminarsModule() {
     mutationFn: (id: number) => fetchWithAuth(`/api/v1/seminars/seminars/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['seminars'] });
-      queryClient.invalidateQueries({ queryKey: ['bureaucracy'] });
       queryClient.invalidateQueries({ queryKey: ['planning-board'] });
       queryClient.invalidateQueries({ queryKey: ['orphan-seminars'] });
     },
@@ -275,9 +317,9 @@ export function SeminarsModule() {
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-gray-200">
         {[
+          { id: 'activity', label: 'Recent Activity', icon: Clock3 },
           { id: 'upcoming', label: 'Upcoming Seminars', icon: Calendar },
           { id: 'speakers', label: 'Speakers', icon: Users },
-          { id: 'tasks', label: 'Pending Tasks', icon: AlertCircle },
           { id: 'planning', label: 'Semester Planning', icon: LayoutGrid },
           { id: 'other', label: 'Other', icon: MoreHorizontal },
         ].map((tab) => (
@@ -298,6 +340,54 @@ export function SeminarsModule() {
       </div>
 
       {/* Content */}
+      {activeTab === 'activity' && (
+        <div className="space-y-3">
+          {activitiesLoading ? (
+            <div className="text-center py-12 text-gray-500">Loading activity...</div>
+          ) : activities.length === 0 ? (
+            <div className="text-center py-16 px-6 bg-gray-50 rounded-xl border border-gray-100">
+              <Clock3 className="w-14 h-14 mx-auto mb-4 text-gray-300" />
+              <p className="text-lg font-medium text-gray-600">No recent activity yet</p>
+              <p className="text-sm text-gray-500 mt-1">Actions you take will appear here</p>
+            </div>
+          ) : (
+            activities.map((evt: any) => {
+              const config = getActivityConfig(evt.event_type);
+              const Icon = config.icon;
+              const createdAt = new Date(evt.created_at);
+              return (
+                <div
+                  key={evt.id}
+                  className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow"
+                >
+                  <div className="flex gap-4">
+                    <div className={cn('flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center', config.color)}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900">{evt.summary}</p>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-sm text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <span className={cn('px-1.5 py-0.5 rounded text-xs font-medium', config.color)}>
+                            {config.label}
+                          </span>
+                        </span>
+                        {evt.semester_plan_id && (
+                          <span>Plan {evt.semester_plan_id}</span>
+                        )}
+                        <span title={createdAt.toLocaleString()}>
+                          {formatDistanceToNow(createdAt, { addSuffix: true })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
       {activeTab === 'upcoming' && (
         <div className="space-y-4">
           {seminarsLoading ? (
@@ -327,6 +417,7 @@ export function SeminarsModule() {
                   }
                 }}
                 onViewDetails={() => setDetailsSeminar(seminar)}
+                onViewFullPage={() => setViewPageSeminar(seminar)}
               />
             ))
           )}
@@ -335,94 +426,17 @@ export function SeminarsModule() {
 
       {activeTab === 'speakers' && (
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-gray-600">
-              {speakers?.length || 0} speaker{speakers?.length !== 1 ? 's' : ''} in database
-            </p>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-gray-900">Speaker Control Panel</h2>
             <button
               onClick={handleAddSpeaker}
-              className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Add Speaker
+              Add to contacts
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {speakersLoading ? (
-              <div className="col-span-full text-center py-12">Loading speakers...</div>
-            ) : speakers?.length === 0 ? (
-              <div className="col-span-full text-center py-12 text-gray-500">
-                <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <p>No speakers yet</p>
-                <button
-                  onClick={handleAddSpeaker}
-                  className="mt-4 text-primary-600 hover:underline"
-                >
-                  Add your first speaker
-                </button>
-              </div>
-            ) : (
-              speakers?.map((speaker: Speaker) => {
-                // Find upcoming seminar for this speaker
-                const upcomingSeminar = seminars?.find((s: Seminar) => 
-                  s.speaker?.id === speaker.id && 
-                  new Date(s.date) >= new Date()
-                );
-                return (
-                  <SpeakerCard 
-                    key={speaker.id} 
-                    speaker={speaker} 
-                    upcomingSeminar={upcomingSeminar}
-                    onEdit={() => handleEditSpeaker(speaker)}
-                    onDelete={() => {
-                      if (confirm(`Delete speaker "${speaker.name}"?`)) {
-                        deleteSpeakerMutation.mutate(speaker.id);
-                      }
-                    }}
-                  />
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'tasks' && (
-        <div className="space-y-4">
-          {bureaucracy?.data?.pending_tasks?.length === 0 ? (
-            <div className="text-center py-12 text-green-600">
-              <CheckCircle className="w-12 h-12 mx-auto mb-4" />
-              <p className="font-medium">All tasks completed!</p>
-              <p className="text-sm text-gray-500 mt-1">No pending bureaucracy tasks</p>
-            </div>
-          ) : (
-            bureaucracy?.data?.pending_tasks?.map((task: any) => (
-              <div 
-                key={task.seminar_id}
-                className="p-4 bg-white border border-amber-200 rounded-lg shadow-sm"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{task.title}</h3>
-                    <p className="text-sm text-gray-600">
-                      {formatDate(task.date)} • {task.days_until} days away
-                    </p>
-                  </div>
-                  <span className="px-3 py-1 text-sm font-medium bg-amber-100 text-amber-800 rounded-full">
-                    {task.tasks.length} pending
-                  </span>
-                </div>
-                <ul className="mt-3 space-y-2">
-                  {task.tasks.map((t: string, i: number) => (
-                    <li key={i} className="flex items-center gap-2 text-sm text-gray-700">
-                      <AlertCircle className="w-4 h-4 text-amber-500" />
-                      {t}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
-          )}
+          <SpeakersControlPanel />
         </div>
       )}
 
@@ -455,6 +469,15 @@ export function SeminarsModule() {
           seminarId={detailsSeminar.id}
           speakerName={detailsSeminar.speaker?.name || 'TBD'}
           onClose={() => setDetailsSeminar(null)}
+        />
+      )}
+
+      {/* Seminar View Page (full info + files) */}
+      {viewPageSeminar && (
+        <SeminarViewPage
+          seminarId={viewPageSeminar.id}
+          seminarTitle={viewPageSeminar.title}
+          onClose={() => setViewPageSeminar(null)}
         />
       )}
     </div>
@@ -656,17 +679,31 @@ function SeminarCard({
   seminar, 
   onUpdateStatus,
   onDelete,
-  onViewDetails
+  onViewDetails,
+  onViewFullPage
 }: { 
   seminar: Seminar; 
   onUpdateStatus: (updates: any) => void;
   onDelete?: () => void;
   onViewDetails?: () => void;
+  onViewFullPage?: () => void;
 }) {
   return (
     <div className="p-6 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow group relative">
       {/* Action buttons */}
       <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all z-10">
+        {onViewFullPage && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewFullPage();
+            }}
+            className="p-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg"
+            title="View full info & files"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </button>
+        )}
         {onViewDetails && (
           <button
             onClick={(e) => {
@@ -674,7 +711,7 @@ function SeminarCard({
               onViewDetails();
             }}
             className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-            title="View details"
+            title="Edit details"
           >
             <FileText className="w-4 h-4" />
           </button>
