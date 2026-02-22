@@ -13,23 +13,26 @@ jobs:
       - name: Setup Flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Wake up app and run backup
+      - name: Start machine and run backup
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          echo "Waking up the app..."
-          # Make a request to wake up the machine (auto-start on Fly.io)
-          curl -s --max-time 30 https://seminars-app.fly.dev/api/health || true
-          echo ""
+          echo "Starting the machine..."
+          # Get the machine ID and start it
+          MACHINE_ID=$(flyctl machine list --app seminars-app --json | jq -r '.[0].id')
+          echo "Machine ID: $MACHINE_ID"
           
-          # Wait for machine to be ready for SSH (try up to 60 seconds)
+          # Try to start the machine (may already be running)
+          flyctl machine start "$MACHINE_ID" --app seminars-app || true
+          
+          # Wait for machine to be ready for SSH (try up to 90 seconds)
           echo "Waiting for machine to be ready for SSH..."
-          for i in {1..12}; do
+          for i in {1..18}; do
             if flyctl ssh console --app seminars-app -C "echo ready" 2>/dev/null | grep -q ready; then
               echo "Machine is ready!"
               break
             fi
-            echo "Waiting... ($i/12)"
+            echo "Waiting... ($i/18)"
             sleep 5
           done
           
