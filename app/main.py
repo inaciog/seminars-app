@@ -897,7 +897,8 @@ def refresh_fallback_mirror(db: Session):
                     file_links.append(esc(f.original_filename))
             parts.append(f"<p><strong>Files:</strong> {', '.join(file_links)}</p>")
 
-        recovery_sections.append(f'<div class="seminar-block">{"\n".join(parts)}</div>')
+        section_content = "\n".join(parts)
+        recovery_sections.append(f'<div class="seminar-block">{section_content}</div>')
 
     recovery_seminars_html = "\n\n".join(recovery_sections) if recovery_sections else "<p>No seminars.</p>"
 
