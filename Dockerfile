@@ -29,6 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 COPY --from=frontend-builder /frontend/dist/ ./frontend/dist/
+COPY img/ ./img/
 COPY backup.sh .
 RUN chmod +x backup.sh
 
