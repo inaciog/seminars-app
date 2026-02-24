@@ -325,6 +325,7 @@ class SeminarDetailsUpdate(BaseModel):
     needs_accommodation: Optional[bool] = None
     accommodation_nights: Optional[str] = None
     estimated_hotel_cost: Optional[str] = None
+    ticket_purchase_info: Optional[str] = None
     
     def get_date_or_none(self, field_value: Optional[str]) -> Optional[date_type]:
         """Convert string date to date object or None if empty."""
@@ -358,6 +359,7 @@ class SeminarDetailsResponse(BaseModel):
     needs_accommodation: bool
     accommodation_nights: Optional[int]
     estimated_hotel_cost: Optional[float]
+    ticket_purchase_info: Optional[str]
     updated_at: datetime
 
 class SpeakerWorkflowUpdate(BaseModel):
@@ -422,59 +424,56 @@ def get_or_create_workflow(db: Session, suggestion_id: int) -> SpeakerWorkflow:
     return workflow
 
 def build_speaker_status(workflow: Optional[SpeakerWorkflow], suggestion: SpeakerSuggestion) -> dict:
+    """Build simplified speaker status with 4-step flow."""
     if not workflow:
         return {
-            "code": "pending_contact",
-            "title": "Pending Initial Contact",
-            "message": "Your invitation is being prepared. You will receive an availability request soon.",
-        }
-    if not workflow.request_available_dates_sent:
-        return {
-            "code": "pending_contact",
-            "title": "Pending Initial Contact",
-            "message": "Your invitation is being prepared. You will receive an availability request soon.",
-        }
-    if workflow.request_available_dates_sent and not workflow.availability_dates_received:
-        return {
-            "code": "awaiting_availability",
-            "title": "Waiting for Your Availability",
+            "code": "waiting_availability",
+            "title": "Waiting for Date Availability",
             "message": "Please submit your available dates using the availability link provided in our email.",
+            "step": 1,
         }
-    if workflow.availability_dates_received and not workflow.speaker_notified_of_date:
+    
+    # Step 1: Waiting for availability (if availability not received yet)
+    if not workflow.availability_dates_received:
         return {
-            "code": "scheduling",
-            "title": "Scheduling in Progress",
-            "message": "We received your availability and are finalizing the seminar date.",
+            "code": "waiting_availability",
+            "title": "Waiting for Date Availability",
+            "message": "Please submit your available dates using the availability link provided in our email.",
+            "step": 1,
         }
-    if workflow.speaker_notified_of_date and not workflow.proposal_submitted:
+    
+    # Step 2: Date assigned (availability received but proposal not submitted)
+    if workflow.availability_dates_received and not workflow.proposal_submitted:
         return {
-            "code": "awaiting_proposal",
-            "title": "Date Confirmed",
-            "message": "Your seminar date is confirmed. Please submit your seminar details and proposal materials.",
+            "code": "date_assigned",
+            "title": "Date Assigned",
+            "message": "Your seminar date has been assigned. Please submit your seminar information and proposal.",
+            "step": 2,
         }
+    
+    # Step 3: Information submitted (proposal submitted but not approved)
     if workflow.proposal_submitted and not workflow.proposal_approved:
         return {
-            "code": "proposal_review",
-            "title": "Proposal Under Review",
+            "code": "info_submitted",
+            "title": "Information Submitted",
             "message": "Your proposal has been submitted and is currently under review.",
+            "step": 3,
         }
+    
+    # Step 4: Proposal approved
     if workflow.proposal_approved:
-        logistics_ok = workflow.meal_ok and workflow.guesthouse_hotel_reserved
-        if logistics_ok:
-            return {
-                "code": "ready",
-                "title": "All Set",
-                "message": "Everything is confirmed. We look forward to your talk.",
-            }
         return {
-            "code": "approved_pending_logistics",
-            "title": "Approved - Logistics in Progress",
-            "message": "Your proposal is approved. Remaining logistics are being finalized.",
+            "code": "proposal_approved",
+            "title": "Proposal Approved",
+            "message": "Your proposal has been approved. You can now purchase your travel tickets.",
+            "step": 4,
         }
+    
     return {
-        "code": "in_progress",
-        "title": "In Progress",
-        "message": f"Your seminar workflow is in progress (status: {suggestion.status}).",
+        "code": "waiting_availability",
+        "title": "Waiting for Date Availability",
+        "message": "Please submit your available dates using the availability link provided in our email.",
+        "step": 1,
     }
 
 def refresh_fallback_mirror(db: Session):
@@ -1501,6 +1500,7 @@ async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db),
             "needs_accommodation": details.needs_accommodation,
             "accommodation_nights": details.accommodation_nights,
             "estimated_hotel_cost": details.estimated_hotel_cost,
+            "ticket_purchase_info": details.ticket_purchase_info,
         }
     }
 
@@ -1576,6 +1576,8 @@ async def update_seminar_details_v1(
             details.estimated_hotel_cost = float(data.estimated_hotel_cost) if data.estimated_hotel_cost else None
         except ValueError:
             pass
+    if data.ticket_purchase_info is not None:
+        details.ticket_purchase_info = data.ticket_purchase_info
     
     details.updated_at = datetime.utcnow()
     seminar.updated_at = datetime.utcnow()
@@ -3122,28 +3124,111 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
     suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
     if not suggestion:
         return HTMLResponse(content=get_invalid_token_html(), status_code=404)
+    
     workflow_stmt = select(SpeakerWorkflow).where(SpeakerWorkflow.suggestion_id == suggestion.id)
     workflow = db.exec(workflow_stmt).first()
     status_payload = build_speaker_status(workflow, suggestion)
-    checklist = [
-        ("Request for Available dates sent", workflow.request_available_dates_sent if workflow else False),
-        ("Availability dates received", workflow.availability_dates_received if workflow else False),
-        ("Speaker notified of his date", workflow.speaker_notified_of_date if workflow else False),
-        ("Meal OK", workflow.meal_ok if workflow else False),
-        ("Guesthouse/Hotel reserved", workflow.guesthouse_hotel_reserved if workflow else False),
-        ("Proposal submitted", workflow.proposal_submitted if workflow else False),
-        ("Proposal approved", workflow.proposal_approved if workflow else False),
+    
+    # Get seminar details if assigned
+    seminar = None
+    seminar_details = None
+    if suggestion.speaker_id:
+        seminar_stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id).order_by(Seminar.date.desc())
+        seminar = db.exec(seminar_stmt).first()
+        if seminar:
+            details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar.id)
+            seminar_details = db.exec(details_stmt).first()
+    
+    # Get availability token for editing
+    availability_token = None
+    if workflow and not workflow.availability_dates_received:
+        avail_stmt = select(SpeakerToken).where(
+            SpeakerToken.suggestion_id == suggestion.id,
+            SpeakerToken.token_type == "availability",
+            SpeakerToken.expires_at > datetime.utcnow(),
+        ).order_by(SpeakerToken.created_at.desc())
+        avail_token = db.exec(avail_stmt).first()
+        if avail_token:
+            availability_token = avail_token.token
+    
+    # Build status steps
+    steps = [
+        ("1. Waiting for Date Availability", status_payload['step'] >= 1, status_payload['step'] == 1),
+        ("2. Date Assigned", status_payload['step'] >= 2, status_payload['step'] == 2),
+        ("3. Information Submitted", status_payload['step'] >= 3, status_payload['step'] == 3),
+        ("4. Proposal Approved", status_payload['step'] >= 4, status_payload['step'] == 4),
     ]
-    checklist_html = "".join(
-        f"<li>{'✅' if done else '⬜'} {label}</li>" for label, done in checklist
+    
+    steps_html = "".join(
+        f"<div class='step {'completed' if completed else ''} {'active' if active else ''}'>{label}</div>"
+        for label, completed, active in steps
     )
+    
+    # Warning box - only show if proposal not approved
+    warning_box = ""
+    if status_payload['step'] < 4:
+        warning_box = """
+        <div class='warning-box'>
+            <div class='warning-title'>⚠️ IMPORTANT: Do Not Purchase Travel Tickets Yet</div>
+            <p>Please do <strong>NOT</strong> buy your flight or train tickets until your proposal has been approved. 
+            We will notify you once your proposal is approved and provide information about where you can purchase your tickets.</p>
+        </div>
+        """
+    
+    # Edit availability link
+    edit_link = ""
+    if availability_token and status_payload['step'] == 1:
+        edit_link = f"<a href='/speaker/availability/{availability_token}' class='edit-link'>✏️ Edit Your Availability</a>"
+    
+    # Ticket purchase info (only when approved)
+    ticket_info_html = ""
+    if status_payload['step'] == 4 and seminar_details and seminar_details.ticket_purchase_info:
+        ticket_info_html = f"""
+        <div class='info-section approved'>
+            <h3>✅ Travel Ticket Purchase Information</h3>
+            <div class='ticket-info'>{seminar_details.ticket_purchase_info}</div>
+        </div>
+        """
+    elif status_payload['step'] == 4:
+        ticket_info_html = """
+        <div class='info-section approved'>
+            <h3>✅ Proposal Approved</h3>
+            <p>You can now purchase your travel tickets. Contact the organizers for specific instructions on where to buy your tickets.</p>
+        </div>
+        """
+    
+    # Seminar info
+    seminar_info_html = ""
+    if seminar:
+        seminar_info_html = f"""
+        <div class='info-section'>
+            <h3>📅 Seminar Information</h3>
+            <div class='info-row'><span class='label'>Title:</span> <span class='value'>{seminar.title or 'TBD'}</span></div>
+            <div class='info-row'><span class='label'>Date:</span> <span class='value'>{seminar.date}</span></div>
+            <div class='info-row'><span class='label'>Time:</span> <span class='value'>{seminar.start_time or 'TBD'} - {seminar.end_time or 'TBD'}</span></div>
+        </div>
+        """
+    
+    # Speaker info
+    speaker_info_html = f"""
+    <div class='info-section'>
+        <h3>👤 Speaker Information</h3>
+        <div class='info-row'><span class='label'>Name:</span> <span class='value'>{suggestion.speaker_name}</span></div>
+        <div class='info-row'><span class='label'>Affiliation:</span> <span class='value'>{suggestion.speaker_affiliation or 'TBD'}</span></div>
+        <div class='info-row'><span class='label'>Topic:</span> <span class='value'>{suggestion.suggested_topic or 'TBD'}</span></div>
+    </div>
+    """
+    
     header_html = get_external_header_with_logos()
+    
     return HTMLResponse(
         content=f"""<!doctype html>
 <html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Seminar Status</title><style>
-body{{font-family:Arial,sans-serif;background:#f4f6f8;padding:24px;margin:0;}}
-.header{{background:#003366;color:white;padding:24px 20px;text-align:center;margin:-24px -24px 24px -24px;}}
+<title>Seminar Status - {suggestion.speaker_name}</title><style>
+:root{{--primary:#003366;--success:#28a745;--warning:#ffc107;--danger:#dc3545;--gray-100:#f8f9fa;--gray-200:#e9ecef;--gray-600:#6c757d;}}
+*{{box-sizing:border-box;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f4f6f8;padding:24px;margin:0;line-height:1.6;}}
+.header{{background:var(--primary);color:white;padding:24px 20px;text-align:center;margin:-24px -24px 24px -24px;}}
 .header-logos{{display:flex;flex-direction:column;align-items:center;gap:12px;}}
 .header-logos-inner{{display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap;}}
 .header .logo-wrap{{background:white;padding:16px 28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.15);}}
@@ -3152,15 +3237,61 @@ body{{font-family:Arial,sans-serif;background:#f4f6f8;padding:24px;margin:0;}}
 .header .logo-econ{{max-height:72px;}}
 .header h1{{font-size:26px;font-weight:600;margin:0;}}
 .header .subtitle{{font-size:15px;opacity:.9;margin-top:6px;}}
-.card{{max-width:760px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 8px rgba(0,0,0,.08);}}
-h1{{margin:0 0 8px 0;}}ul{{line-height:1.8;}}
+.container{{max-width:800px;margin:0 auto;}}
+.card{{background:#fff;border-radius:12px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,0.08);margin-bottom:24px;}}
+.warning-box{{background:#fff3cd;border:2px solid #ffc107;border-radius:8px;padding:20px;margin-bottom:24px;}}
+.warning-box .warning-title{{color:#856404;font-weight:bold;font-size:18px;margin-bottom:8px;}}
+.warning-box p{{color:#856404;margin:0;}}
+.status-steps{{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;}}
+.step{{flex:1;min-width:140px;padding:16px 12px;background:var(--gray-200);border-radius:8px;text-align:center;font-size:14px;font-weight:500;color:var(--gray-600);}}
+.step.completed{{background:#d4edda;color:#155724;}}
+.step.active{{background:var(--primary);color:white;box-shadow:0 2px 8px rgba(0,51,102,0.3);}}
+.status-message{{background:var(--gray-100);border-left:4px solid var(--primary);padding:16px 20px;border-radius:0 8px 8px 0;margin-bottom:24px;}}
+.status-message h2{{margin:0 0 8px 0;font-size:20px;color:var(--primary);}}
+.status-message p{{margin:0;color:var(--gray-600);}}
+.info-section{{margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid var(--gray-200);}}
+.info-section:last-child{{border-bottom:none;margin-bottom:0;padding-bottom:0;}}
+.info-section.approved{{background:#d4edda;border:1px solid #28a745;border-radius:8px;padding:20px;}}
+.info-section h3{{margin:0 0 16px 0;font-size:16px;color:var(--primary);text-transform:uppercase;letter-spacing:0.5px;}}
+.info-section.approved h3{{color:#155724;}}
+.info-row{{display:flex;margin-bottom:12px;}}
+.info-row:last-child{{margin-bottom:0;}}
+.info-row .label{{width:120px;font-weight:600;color:var(--gray-600);flex-shrink:0;}}
+.info-row .value{{flex:1;color:#333;}}
+.ticket-info{{background:white;border:1px solid #28a745;border-radius:6px;padding:16px;font-size:15px;line-height:1.8;white-space:pre-wrap;}}
+.edit-link{{display:inline-block;background:var(--primary);color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:500;margin-top:16px;transition:background 0.2s;}}
+.edit-link:hover{{background:#004080;}}
+.footer{{text-align:center;color:var(--gray-600);font-size:14px;margin-top:24px;}}
+@media (max-width: 600px){{.step{{min-width:100%;}}.info-row{{flex-direction:column;}}.info-row .label{{width:auto;margin-bottom:4px;}}}}
 </style></head>
-<body><div class='header'>{header_html}</div>
-<div class='card'><h1>{suggestion.speaker_name}</h1><p><strong>{status_payload['title']}</strong></p><p>{status_payload['message']}</p>
-<p><strong>Suggested topic:</strong> {suggestion.suggested_topic or 'TBD'}</p>
-<h3>Checklist</h3><ul>{checklist_html}</ul>
-<p style='color:#666'>This page updates whenever seminar status changes.</p>
-</div></body></html>"""
+<body>
+<div class='header'>{header_html}</div>
+<div class='container'>
+    {warning_box}
+    
+    <div class='card'>
+        <div class='status-steps'>
+            {steps_html}
+        </div>
+        
+        <div class='status-message'>
+            <h2>{status_payload['title']}</h2>
+            <p>{status_payload['message']}</p>
+        </div>
+        
+        {edit_link}
+    </div>
+    
+    {ticket_info_html}
+    
+    <div class='card'>
+        {speaker_info_html}
+        {seminar_info_html}
+    </div>
+    
+    <p class='footer'>This page updates automatically when your seminar status changes.<br>Last updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</p>
+</div>
+</body></html>"""
     )
 
 @app.get("/faculty/suggest-speaker/{plan_id}", response_class=HTMLResponse)

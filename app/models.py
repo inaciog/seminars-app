@@ -214,6 +214,9 @@ class SeminarDetails(SQLModel, table=True):
     currency: Optional[str] = "USD"
     beneficiary_address: Optional[str] = None
     
+    # Ticket purchase info (shown when proposal is approved)
+    ticket_purchase_info: Optional[str] = None
+    
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     seminar: Seminar = Relationship()

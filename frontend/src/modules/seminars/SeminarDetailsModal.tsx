@@ -39,6 +39,7 @@ interface SeminarDetails {
     needs_accommodation: boolean;
     accommodation_nights: number | null;
     estimated_hotel_cost: number | null;
+    ticket_purchase_info: string | null;
     cv_file_path: string | null;
     photo_file_path: string | null;
     passport_file_path: string | null;
@@ -158,6 +159,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
     needs_accommodation: true,
     accommodation_nights: '2',
     estimated_hotel_cost: '',
+    ticket_purchase_info: '',
   });
   
   const [initialized, setInitialized] = useState(false);
@@ -213,6 +215,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         needs_accommodation: details.info?.needs_accommodation ?? true,
         accommodation_nights: details.info?.accommodation_nights?.toString() || '2',
         estimated_hotel_cost: details.info?.estimated_hotel_cost?.toString() || '',
+        ticket_purchase_info: details.info?.ticket_purchase_info || '',
       };
       setInitialized(true);
       forceUpdate({}); // Trigger one re-render to populate defaultValues
@@ -251,6 +254,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
       needs_accommodation: formValues.current.needs_accommodation,
       accommodation_nights: formValues.current.accommodation_nights,
       estimated_hotel_cost: formValues.current.estimated_hotel_cost,
+      ticket_purchase_info: formValues.current.ticket_purchase_info,
     };
     
     try {
@@ -285,6 +289,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
           needs_accommodation: formValues.current.needs_accommodation,
           accommodation_nights: formValues.current.accommodation_nights ? parseInt(formValues.current.accommodation_nights as string) : null,
           estimated_hotel_cost: formValues.current.estimated_hotel_cost ? parseFloat(formValues.current.estimated_hotel_cost as string) : null,
+          ticket_purchase_info: formValues.current.ticket_purchase_info || null,
         },
       }));
       queryClient.invalidateQueries({ queryKey: ['seminars'] });
@@ -516,6 +521,23 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                       />
                     </FormField>
                   </div>
+                </FormSection>
+
+                <FormSection title="Ticket Purchase Information">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-green-800">
+                      This information is shown to the speaker when their proposal is approved. 
+                      Include details about where they can purchase their travel tickets.
+                    </p>
+                  </div>
+                  <FormField label="Ticket Purchase Instructions">
+                    <TextArea 
+                      value={v.ticket_purchase_info as string} 
+                      onChange={(val) => updateField('ticket_purchase_info', val)}
+                      placeholder="e.g., You can purchase your flight tickets from Expedia, Kayak, or directly from the airline. Please keep the receipt for reimbursement."
+                      rows={4}
+                    />
+                  </FormField>
                 </FormSection>
 
                 <FormSection title="Passport Information">
