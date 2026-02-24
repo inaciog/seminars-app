@@ -763,3 +763,42 @@ async def list_emergency_backups(
     backups.sort(key=lambda x: x["created"], reverse=True)
     
     return {"backups": backups}
+
+
+@router.post("/migrate/ticket-purchase-info")
+async def migrate_ticket_purchase_info(
+    user: dict = Depends(get_current_user)
+):
+    """
+    Add ticket_purchase_info column to seminar_details table.
+    Run this after deployment if you get 500 errors about missing column.
+    """
+    _require_owner(user)
+    
+    import sqlite3
+    
+    db_path = _get_database_path()
+    
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        
+        # Check if column already exists
+        cursor.execute("PRAGMA table_info(seminar_details)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'ticket_purchase_info' in columns:
+            return {"success": True, "message": "Column 'ticket_purchase_info' already exists"}
+        
+        # Add the column
+        cursor.execute("ALTER TABLE seminar_details ADD COLUMN ticket_purchase_info TEXT")
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "Column 'ticket_purchase_info' added successfully"}
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Migration failed: {str(e)}"
+        )
