@@ -23,7 +23,8 @@ import {
   FileUp,
   FileDown,
   Send,
-  ClipboardList
+  ClipboardList,
+  Database
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { seminarsApi, fetchWithAuth } from '@/api/client';
@@ -32,6 +33,7 @@ import { SemesterPlanning } from './SemesterPlanning';
 import { SpeakersControlPanel } from './SpeakersControlPanel';
 import { SeminarDetailsModal } from './SeminarDetailsModal';
 import { SeminarViewPage } from './SeminarViewPage';
+import { DatabaseAdmin } from './DatabaseAdmin';
 import type { Seminar, Speaker } from '@/types';
 
 // Activity event type -> friendly label and icon
@@ -321,6 +323,7 @@ export function SeminarsModule() {
           { id: 'upcoming', label: 'Upcoming Seminars', icon: Calendar },
           { id: 'speakers', label: 'Speakers', icon: Users },
           { id: 'planning', label: 'Semester Planning', icon: LayoutGrid },
+          { id: 'admin', label: 'Database', icon: Database },
           { id: 'other', label: 'Other', icon: MoreHorizontal },
         ].map((tab) => (
           <button
@@ -441,6 +444,8 @@ export function SeminarsModule() {
       )}
 
       {activeTab === 'planning' && <SemesterPlanning />}
+
+      {activeTab === 'admin' && <DatabaseAdmin />}
 
       {activeTab === 'other' && (
         <OtherTab

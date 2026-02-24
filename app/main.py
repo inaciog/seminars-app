@@ -24,7 +24,18 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
-from sqlmodel import SQLModel, Field, Session, create_engine, select, Relationship
+from sqlmodel import Session, select
+
+# Import all models from models module
+from app.models import (
+    SQLModel, Speaker, Room, Seminar, SemesterPlan, SeminarSlot,
+    SpeakerSuggestion, SpeakerAvailability, SpeakerToken,
+    SeminarDetails, SpeakerWorkflow, ActivityEvent,
+    UploadedFile, AvailabilitySlot
+)
+
+# Import core utilities
+from app.core import settings, get_engine, get_db, record_activity
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_settings import BaseSettings
 
@@ -51,274 +62,18 @@ from app.deletion_handlers import (
     delete_suggestion_robust
 )
 
+
+
 # Initialize logging
 init_logging()
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# Configuration
+# Database Models Section
 # ============================================================================
 
-class Settings(BaseSettings):
-    jwt_secret: str = "your-secret-key-change-in-production"
-    api_secret: str = "your-api-secret-for-dashboard"
-    master_password: str = ""  # Set via MASTER_PASSWORD env var for speaker token access
-    database_url: str = "/data/seminars.db"
-    uploads_dir: str = "/data/uploads"
-    auth_service_url: str = "https://inacio-auth.fly.dev"
-    app_url: str = "https://seminars-app.fly.dev"
-    feature_semester_plan_v2: bool = False
-    fallback_mirror_dir: str = "fallback-mirror"
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"  # Ignore PORT, HOST, etc. from .env (used by Fly.io, not by app)
-
-settings = Settings()
-
-# ============================================================================
-# Database Models
-# ============================================================================
-
-engine = None
-
-def get_engine():
-    global engine
-    if engine is None:
-        db_url = settings.database_url
-        if db_url.startswith("sqlite://"):
-            url = db_url
-        else:
-            url = f"sqlite:///{db_url}"
-        engine = create_engine(url, connect_args={"check_same_thread": False})
-    return engine
-
-class Speaker(SQLModel, table=True):
-    __tablename__ = "speakers"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    affiliation: Optional[str] = None
-    email: Optional[str] = None
-    website: Optional[str] = None
-    bio: Optional[str] = None
-    notes: Optional[str] = None
-    cv_path: Optional[str] = None
-    photo_path: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    seminars: List["Seminar"] = Relationship(back_populates="speaker")
-    availability_slots: List["AvailabilitySlot"] = Relationship(back_populates="speaker")
-
-class Room(SQLModel, table=True):
-    __tablename__ = "rooms"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    capacity: Optional[int] = None
-    location: Optional[str] = None
-    equipment: Optional[str] = None
-    
-    seminars: List["Seminar"] = Relationship(back_populates="room")
-
-class Seminar(SQLModel, table=True):
-    __tablename__ = "seminars"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    title: str
-    date: date_type = Field(index=True)
-    start_time: str
-    end_time: Optional[str] = None
-    
-    speaker_id: int = Field(foreign_key="speakers.id")
-    room_id: Optional[int] = Field(default=None, foreign_key="rooms.id")
-    
-    abstract: Optional[str] = None
-    paper_title: Optional[str] = None
-    status: str = Field(default="planned")
-    
-    room_booked: bool = Field(default=False)
-    announcement_sent: bool = Field(default=False)
-    calendar_invite_sent: bool = Field(default=False)
-    website_updated: bool = Field(default=False)
-    catering_ordered: bool = Field(default=False)
-    
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    speaker: Speaker = Relationship(back_populates="seminars")
-    room: Optional[Room] = Relationship(back_populates="seminars")
-    files: List["UploadedFile"] = Relationship(back_populates="seminar")
-
-class AvailabilitySlot(SQLModel, table=True):
-    __tablename__ = "availability_slots"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    speaker_id: int = Field(foreign_key="speakers.id")
-    date: date_type
-    start_time: str
-    end_time: str
-    is_available: bool = Field(default=True)
-    notes: Optional[str] = None
-    
-    speaker: Speaker = Relationship(back_populates="availability_slots")
-
-class UploadedFile(SQLModel, table=True):
-    __tablename__ = "uploaded_files"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    seminar_id: int = Field(foreign_key="seminars.id")
-    
-    original_filename: str
-    original_extension: Optional[str] = None
-    content_type: str
-    file_size: int
-    storage_filename: str
-    file_category: Optional[str] = None
-    description: Optional[str] = None
-    
-    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    seminar: Seminar = Relationship(back_populates="files")
-
-# New models for semester planning
-class SemesterPlan(SQLModel, table=True):
-    __tablename__ = "semester_plans"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    academic_year: str
-    semester: str
-    default_room: str = "TBD"
-    default_start_time: str = "14:00"
-    default_duration_minutes: int = 60
-    status: str = Field(default="draft")  # draft, active, completed, archived
-    notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    slots: List["SeminarSlot"] = Relationship(back_populates="plan")
-
-class SeminarSlot(SQLModel, table=True):
-    __tablename__ = "seminar_slots"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    semester_plan_id: int = Field(foreign_key="semester_plans.id")
-    date: date_type
-    start_time: str
-    end_time: str
-    room: str
-    status: str = Field(default="available")  # available, reserved, confirmed, cancelled
-    assigned_seminar_id: Optional[int] = Field(default=None, foreign_key="seminars.id")
-    assigned_suggestion_id: Optional[int] = Field(default=None, foreign_key="speaker_suggestions.id")
-    
-    plan: SemesterPlan = Relationship(back_populates="slots")
-    assigned_seminar: Optional[Seminar] = Relationship()
-
-class SpeakerSuggestion(SQLModel, table=True):
-    __tablename__ = "speaker_suggestions"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    suggested_by: str
-    suggested_by_email: Optional[str] = None
-    speaker_id: Optional[int] = Field(default=None, foreign_key="speakers.id")
-    speaker_name: str
-    speaker_email: Optional[str] = None
-    speaker_affiliation: Optional[str] = None
-    suggested_topic: Optional[str] = None
-    reason: Optional[str] = None
-    priority: str = Field(default="medium")  # low, medium, high
-    status: str = Field(default="pending")  # pending, contacted, confirmed, declined
-    semester_plan_id: Optional[int] = Field(default=None, foreign_key="semester_plans.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    speaker: Optional[Speaker] = Relationship()
-    availability: List["SpeakerAvailability"] = Relationship(back_populates="suggestion")
-
-class SpeakerAvailability(SQLModel, table=True):
-    __tablename__ = "speaker_availability"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    suggestion_id: int = Field(foreign_key="speaker_suggestions.id")
-    date: date_type
-    preference: str = Field(default="available")  # preferred, available, not_preferred
-    
-    suggestion: SpeakerSuggestion = Relationship(back_populates="availability")
-
-class SpeakerToken(SQLModel, table=True):
-    __tablename__ = "speaker_tokens"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    token: str = Field(index=True, unique=True)
-    suggestion_id: int = Field(foreign_key="speaker_suggestions.id")
-    token_type: str  # 'availability', 'info', or 'status'
-    seminar_id: Optional[int] = Field(default=None, foreign_key="seminars.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    expires_at: datetime
-    used_at: Optional[datetime] = None
-    
-    suggestion: SpeakerSuggestion = Relationship()
-    seminar: Optional[Seminar] = Relationship()
-
-class SeminarDetails(SQLModel, table=True):
-    __tablename__ = "seminar_details"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    seminar_id: int = Field(foreign_key="seminars.id", unique=True)
-    
-    # Travel info
-    check_in_date: Optional[date_type] = None
-    check_out_date: Optional[date_type] = None
-    passport_number: Optional[str] = None
-    passport_country: Optional[str] = None
-    departure_city: Optional[str] = None
-    travel_method: Optional[str] = "flight"
-    estimated_travel_cost: Optional[float] = None
-    
-    # Accommodation
-    needs_accommodation: bool = Field(default=True)
-    accommodation_nights: Optional[int] = None
-    estimated_hotel_cost: Optional[float] = None
-    
-    # Payment info
-    payment_email: Optional[str] = None
-    beneficiary_name: Optional[str] = None
-    bank_account_number: Optional[str] = None
-    bank_name: Optional[str] = None
-    bank_address: Optional[str] = None
-    swift_code: Optional[str] = None
-    currency: Optional[str] = "USD"
-    beneficiary_address: Optional[str] = None
-    
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    seminar: Seminar = Relationship()
-
-class SpeakerWorkflow(SQLModel, table=True):
-    __tablename__ = "speaker_workflows"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    suggestion_id: int = Field(foreign_key="speaker_suggestions.id", unique=True, index=True)
-    request_available_dates_sent: bool = Field(default=False)
-    availability_dates_received: bool = Field(default=False)
-    speaker_notified_of_date: bool = Field(default=False)
-    meal_ok: bool = Field(default=False)
-    guesthouse_hotel_reserved: bool = Field(default=False)
-    proposal_submitted: bool = Field(default=False)
-    proposal_approved: bool = Field(default=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-class ActivityEvent(SQLModel, table=True):
-    __tablename__ = "activity_events"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    semester_plan_id: Optional[int] = Field(default=None, foreign_key="semester_plans.id", index=True)
-    event_type: str = Field(index=True)
-    summary: str
-    entity_type: Optional[str] = None
-    entity_id: Optional[int] = None
-    actor: Optional[str] = None
-    details_json: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+# Note: Models are defined in app/models.py
+# Core utilities (settings, get_engine, record_activity) are in app/core.py
 
 # ============================================================================
 # Pydantic Models
@@ -632,10 +387,6 @@ class ActivityEventResponse(BaseModel):
 
 security = HTTPBearer(auto_error=False)
 
-def get_db():
-    with Session(get_engine()) as session:
-        yield session
-
 def verify_token(token: str) -> Optional[dict]:
     """Verify JWT token from auth service."""
     try:
@@ -708,27 +459,6 @@ def get_or_create_workflow(db: Session, suggestion_id: int) -> SpeakerWorkflow:
     db.add(workflow)
     db.flush()
     return workflow
-
-def record_activity(
-    db: Session,
-    event_type: str,
-    summary: str,
-    semester_plan_id: Optional[int] = None,
-    entity_type: Optional[str] = None,
-    entity_id: Optional[int] = None,
-    actor: Optional[str] = None,
-    details: Optional[dict] = None,
-):
-    evt = ActivityEvent(
-        semester_plan_id=semester_plan_id,
-        event_type=event_type,
-        summary=summary,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        actor=actor,
-        details_json=json.dumps(details or {}, ensure_ascii=True),
-    )
-    db.add(evt)
 
 def build_speaker_status(workflow: Optional[SpeakerWorkflow], suggestion: SpeakerSuggestion) -> dict:
     if not workflow:
@@ -3766,3 +3496,11 @@ async def backup_status(secret: str):
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+# ============================================================================
+# Include Database Admin Router (imported here to avoid circular imports)
+# ============================================================================
+
+from app import admin_db
+app.include_router(admin_db.router)
