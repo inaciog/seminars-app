@@ -3142,18 +3142,6 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
             details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar.id)
             seminar_details = db.exec(details_stmt).first()
     
-    # Get availability token for editing
-    availability_token = None
-    if workflow and not workflow.availability_dates_received:
-        avail_stmt = select(SpeakerToken).where(
-            SpeakerToken.suggestion_id == suggestion.id,
-            SpeakerToken.token_type == "availability",
-            SpeakerToken.expires_at > datetime.utcnow(),
-        ).order_by(SpeakerToken.created_at.desc())
-        avail_token = db.exec(avail_stmt).first()
-        if avail_token:
-            availability_token = avail_token.token
-    
     # Build status steps
     steps = [
         ("1. Waiting for Date Availability", status_payload['step'] >= 1, status_payload['step'] == 1),
@@ -3207,22 +3195,38 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
     # Build action links based on current step
     action_links_html = ""
     
-    if status_payload['step'] == 1 and availability_token:
-        action_links_html = f"""
-        <div class='action-section'>
-            <h3>📝 Action Required</h3>
-            <p>Please submit your available dates for the seminar:</p>
-            <a href='/speaker/availability/{availability_token}' class='action-link primary'>Submit Availability</a>
-        </div>
-        """
-    elif status_payload['step'] == 2 and info_token:
-        action_links_html = f"""
-        <div class='action-section'>
-            <h3>📝 Action Required</h3>
-            <p>Please submit your seminar information and proposal:</p>
-            <a href='/speaker/info/{info_token}' class='action-link primary'>Submit Information</a>
-        </div>
-        """
+    if status_payload['step'] == 1:
+        if availability_token:
+            action_links_html = f"""
+            <div class='action-section'>
+                <h3>📝 Action Required</h3>
+                <p>Please submit your available dates for the seminar:</p>
+                <a href='/speaker/availability/{availability_token}' class='action-link primary'>Submit Availability</a>
+            </div>
+            """
+        else:
+            action_links_html = """
+            <div class='action-section waiting'>
+                <h3>⏳ Waiting for Availability Request</h3>
+                <p>You will receive an email with a link to submit your available dates soon. If you have any questions, please contact the organizers.</p>
+            </div>
+            """
+    elif status_payload['step'] == 2:
+        if info_token:
+            action_links_html = f"""
+            <div class='action-section'>
+                <h3>📝 Action Required</h3>
+                <p>Please submit your seminar information and proposal:</p>
+                <a href='/speaker/info/{info_token}' class='action-link primary'>Submit Information</a>
+            </div>
+            """
+        else:
+            action_links_html = """
+            <div class='action-section waiting'>
+                <h3>⏳ Waiting for Information Request</h3>
+                <p>You will receive an email with a link to submit your seminar information soon. If you have any questions, please contact the organizers.</p>
+            </div>
+            """
     elif status_payload['step'] == 3:
         action_links_html = """
         <div class='action-section waiting'>
