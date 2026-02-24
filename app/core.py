@@ -83,3 +83,53 @@ def record_activity(
         details_json=json.dumps(details or {}, ensure_ascii=True),
     )
     db.add(evt)
+
+
+# ============================================================================
+# Authentication (defined here to avoid circular imports)
+# ============================================================================
+
+from typing import Optional
+from fastapi import Depends, HTTPException, Query, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+
+security = HTTPBearer(auto_error=False)
+
+
+def verify_token(token: str) -> Optional[dict]:
+    """Verify JWT token from auth service."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+        logger.debug(f"Token verified for user: {payload.get('id', 'unknown')}")
+        return payload
+    except JWTError as e:
+        logger.warning(f"Token verification failed: {str(e)}")
+        return None
+
+
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    token: Optional[str] = Query(None),
+    access_code: Optional[str] = Query(None)
+) -> dict:
+    """Get current user from token (header, query param, or cookie)."""
+    auth_token = credentials.credentials if credentials else None
+    if not auth_token:
+        auth_token = token
+    if not auth_token:
+        auth_token = access_code  # Support access_code query param for file downloads
+    if not auth_token:
+        auth_token = request.cookies.get("token")
+    
+    if not auth_token:
+        logger.warning(f"Authentication failed: No token provided - {request.method} {request.url.path}")
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    user = verify_token(auth_token)
+    if not user:
+        logger.warning(f"Authentication failed: Invalid token - {request.method} {request.url.path}")
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    return user

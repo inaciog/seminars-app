@@ -32,15 +32,7 @@ from app.models import (
 )
 
 # Import core utilities (no circular dependency)
-from app.core import get_engine, settings, record_activity
-
-# Dependency wrapper for get_current_user to avoid circular import
-async def _get_current_user_dependency(*args, **kwargs):
-    from app.main import get_current_user
-    return await get_current_user(*args, **kwargs)
-
-# Export for use in routes
-get_current_user = _get_current_user_dependency
+from app.core import get_engine, settings, record_activity, get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin/db", tags=["Database Admin"])

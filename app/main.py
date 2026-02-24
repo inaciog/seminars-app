@@ -19,7 +19,6 @@ from typing import Optional, List
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Form, Query
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +34,7 @@ from app.models import (
 )
 
 # Import core utilities
-from app.core import settings, get_engine, get_db, record_activity
+from app.core import settings, get_engine, get_db, record_activity, verify_token, get_current_user
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_settings import BaseSettings
 
@@ -384,44 +383,6 @@ class ActivityEventResponse(BaseModel):
 # ============================================================================
 # Auth
 # ============================================================================
-
-security = HTTPBearer(auto_error=False)
-
-def verify_token(token: str) -> Optional[dict]:
-    """Verify JWT token from auth service."""
-    try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
-        logger.debug(f"Token verified for user: {payload.get('id', 'unknown')}")
-        return payload
-    except JWTError as e:
-        logger.warning(f"Token verification failed: {str(e)}")
-        return None
-
-async def get_current_user(
-    request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    token: Optional[str] = Query(None),
-    access_code: Optional[str] = Query(None)
-) -> dict:
-    """Get current user from token (header, query param, or cookie)."""
-    auth_token = credentials.credentials if credentials else None
-    if not auth_token:
-        auth_token = token
-    if not auth_token:
-        auth_token = access_code  # Support access_code query param for file downloads
-    if not auth_token:
-        auth_token = request.cookies.get("token")
-    
-    if not auth_token:
-        logger.warning(f"Authentication failed: No token provided - {request.method} {request.url.path}")
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    user = verify_token(auth_token)
-    if not user:
-        logger.warning(f"Authentication failed: Invalid token - {request.method} {request.url.path}")
-        raise HTTPException(status_code=401, detail="Invalid token")
-    
-    return user
 
 async def require_auth(request: Request, call_next):
     """Middleware to check auth on HTML routes."""
