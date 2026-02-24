@@ -3178,10 +3178,65 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
         </div>
         """
     
-    # Edit availability link
-    edit_link = ""
-    if availability_token and status_payload['step'] == 1:
-        edit_link = f"<a href='/speaker/availability/{availability_token}' class='edit-link'>✏️ Edit Your Availability</a>"
+    # Get tokens for action links
+    availability_token = None
+    info_token = None
+    
+    # Get availability token (for step 1)
+    avail_stmt = select(SpeakerToken).where(
+        SpeakerToken.suggestion_id == suggestion.id,
+        SpeakerToken.token_type == "availability",
+        SpeakerToken.expires_at > datetime.utcnow(),
+    ).order_by(SpeakerToken.created_at.desc())
+    avail_token = db.exec(avail_stmt).first()
+    if avail_token:
+        availability_token = avail_token.token
+    
+    # Get info token (for step 2)
+    if seminar:
+        info_stmt = select(SpeakerToken).where(
+            SpeakerToken.suggestion_id == suggestion.id,
+            SpeakerToken.token_type == "info",
+            SpeakerToken.seminar_id == seminar.id,
+            SpeakerToken.expires_at > datetime.utcnow(),
+        ).order_by(SpeakerToken.created_at.desc())
+        info_token_obj = db.exec(info_stmt).first()
+        if info_token_obj:
+            info_token = info_token_obj.token
+    
+    # Build action links based on current step
+    action_links_html = ""
+    
+    if status_payload['step'] == 1 and availability_token:
+        action_links_html = f"""
+        <div class='action-section'>
+            <h3>📝 Action Required</h3>
+            <p>Please submit your available dates for the seminar:</p>
+            <a href='/speaker/availability/{availability_token}' class='action-link primary'>Submit Availability</a>
+        </div>
+        """
+    elif status_payload['step'] == 2 and info_token:
+        action_links_html = f"""
+        <div class='action-section'>
+            <h3>📝 Action Required</h3>
+            <p>Please submit your seminar information and proposal:</p>
+            <a href='/speaker/info/{info_token}' class='action-link primary'>Submit Information</a>
+        </div>
+        """
+    elif status_payload['step'] == 3:
+        action_links_html = """
+        <div class='action-section waiting'>
+            <h3>⏳ Waiting for Review</h3>
+            <p>Your proposal is being reviewed. You will be notified once it has been approved.</p>
+        </div>
+        """
+    elif status_payload['step'] == 4:
+        action_links_html = """
+        <div class='action-section approved'>
+            <h3>✅ Proposal Approved</h3>
+            <p>Your proposal has been approved! You can now purchase your travel tickets.</p>
+        </div>
+        """
     
     # Ticket purchase info (only when approved)
     ticket_info_html = ""
@@ -3231,6 +3286,9 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
     
     header_html = get_external_header_with_logos()
     
+    # Remove unused edit_link variable
+    edit_link = ""
+    
     return HTMLResponse(
         content=f"""<!doctype html>
 <html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -3269,8 +3327,17 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 .info-row .label{{width:120px;font-weight:600;color:var(--gray-600);flex-shrink:0;}}
 .info-row .value{{flex:1;color:#333;}}
 .ticket-info{{background:white;border:1px solid #28a745;border-radius:6px;padding:16px;font-size:15px;line-height:1.8;white-space:pre-wrap;}}
-.edit-link{{display:inline-block;background:var(--primary);color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:500;margin-top:16px;transition:background 0.2s;}}
-.edit-link:hover{{background:#004080;}}
+.action-section{{background:#e7f3ff;border:1px solid #0066cc;border-radius:8px;padding:20px;margin-bottom:24px;}}
+.action-section.waiting{{background:#fff3cd;border-color:#ffc107;}}
+.action-section.approved{{background:#d4edda;border-color:#28a745;}}
+.action-section h3{{margin:0 0 12px 0;font-size:18px;color:#003366;}}
+.action-section.waiting h3{{color:#856404;}}
+.action-section.approved h3{{color:#155724;}}
+.action-section p{{margin:0 0 16px 0;color:#333;}}
+.action-link{{display:inline-block;background:var(--primary);color:white;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;transition:all 0.2s;box-shadow:0 2px 4px rgba(0,51,102,0.2);}}
+.action-link:hover{{background:#004080;transform:translateY(-1px);box-shadow:0 4px 8px rgba(0,51,102,0.3);}}
+.action-link.primary{{background:#0066cc;}}
+.action-link.primary:hover{{background:#0052a3;}}
 .footer{{text-align:center;color:var(--gray-600);font-size:14px;margin-top:24px;}}
 @media (max-width: 600px){{.step{{min-width:100%;}}.info-row{{flex-direction:column;}}.info-row .label{{width:auto;margin-bottom:4px;}}}}
 </style></head>
@@ -3288,9 +3355,9 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
             <h2>{status_payload['title']}</h2>
             <p>{status_payload['message']}</p>
         </div>
-        
-        {edit_link}
     </div>
+    
+    {action_links_html}
     
     {ticket_info_html}
     
