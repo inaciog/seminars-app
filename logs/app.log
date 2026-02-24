@@ -42,3 +42,28 @@
 2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars/3 "HTTP/1.1 200 OK"
 2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: PUT http://testserver/api/seminars/4 "HTTP/1.1 200 OK"
 2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: DELETE http://testserver/api/seminars/5 "HTTP/1.1 200 OK"
+2026-02-24 17:25:17 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:25:17 | WARNING  | app.main | <module>:1229 | Frontend assets directory not found at startup: /Users/inaciobo/github/seminars-app/frontend/dist/assets
+2026-02-24 17:26:04 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:26:04 | WARNING  | app.main | <module>:1228 | Frontend assets directory not found at startup: /Users/inaciobo/github/seminars-app/frontend/dist/assets
+2026-02-24 17:28:50 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:28:50 | WARNING  | app.main | <module>:1009 | Frontend assets directory not found at startup: /Users/inaciobo/github/seminars-app/frontend/dist/assets
+2026-02-24 17:30:24 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:31:06 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:31:51 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:31:52 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:31:52 | WARNING  | app.main | <module>:956 | Frontend assets directory not found at startup: /Users/inaciobo/github/seminars-app/frontend/dist/assets
+2026-02-24 17:35:08 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:35:08 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:43:57 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:43:58 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:44:04 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:44:04 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:59:02 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 17:59:02 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 18:58:23 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 18:58:23 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 19:01:57 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 19:01:57 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 19:03:09 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-24 19:03:09 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention

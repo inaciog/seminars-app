@@ -1500,7 +1500,7 @@ async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db),
             "needs_accommodation": details.needs_accommodation,
             "accommodation_nights": details.accommodation_nights,
             "estimated_hotel_cost": details.estimated_hotel_cost,
-            "ticket_purchase_info": details.ticket_purchase_info,
+            "ticket_purchase_info": getattr(details, 'ticket_purchase_info', None),
         }
     }
 
@@ -1577,7 +1577,10 @@ async def update_seminar_details_v1(
         except ValueError:
             pass
     if data.ticket_purchase_info is not None:
-        details.ticket_purchase_info = data.ticket_purchase_info
+        try:
+            setattr(details, 'ticket_purchase_info', data.ticket_purchase_info)
+        except Exception:
+            pass  # Column might not exist yet
     
     details.updated_at = datetime.utcnow()
     seminar.updated_at = datetime.utcnow()
@@ -3182,11 +3185,18 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
     
     # Ticket purchase info (only when approved)
     ticket_info_html = ""
-    if status_payload['step'] == 4 and seminar_details and seminar_details.ticket_purchase_info:
+    ticket_purchase_info = None
+    try:
+        if seminar_details:
+            ticket_purchase_info = getattr(seminar_details, 'ticket_purchase_info', None)
+    except Exception:
+        pass  # Column might not exist yet
+    
+    if status_payload['step'] == 4 and ticket_purchase_info:
         ticket_info_html = f"""
         <div class='info-section approved'>
             <h3>✅ Travel Ticket Purchase Information</h3>
-            <div class='ticket-info'>{seminar_details.ticket_purchase_info}</div>
+            <div class='ticket-info'>{ticket_purchase_info}</div>
         </div>
         """
     elif status_payload['step'] == 4:
