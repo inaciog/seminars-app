@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Plus, 
@@ -35,6 +35,11 @@ import { SeminarDetailsModal } from './SeminarDetailsModal';
 import { SeminarViewPage } from './SeminarViewPage';
 import { DatabaseAdmin } from './DatabaseAdmin';
 import type { Seminar, Speaker } from '@/types';
+
+// Helper to open seminar details from any component
+export function openSeminarDetails(seminar: Seminar) {
+  window.dispatchEvent(new CustomEvent('open-seminar-details', { detail: seminar }));
+}
 
 // Activity event type -> friendly label and icon
 const ACTIVITY_EVENT_CONFIG: Record<string, { label: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
@@ -216,10 +221,33 @@ export function SeminarsModule() {
   const [viewPageSeminar, setViewPageSeminar] = useState<Seminar | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: seminars, isLoading: seminarsLoading } = useQuery({
+  // Listen for custom event to open seminar details from child components
+  useEffect(() => {
+    const handleOpenSeminarDetails = (event: Event) => {
+      const customEvent = event as CustomEvent<Seminar>;
+      if (customEvent.detail) {
+        setDetailsSeminar(customEvent.detail);
+      }
+    };
+    
+    window.addEventListener('open-seminar-details', handleOpenSeminarDetails);
+    return () => {
+      window.removeEventListener('open-seminar-details', handleOpenSeminarDetails);
+    };
+  }, []);
+
+  const { data: seminarsRaw, isLoading: seminarsLoading } = useQuery({
     queryKey: ['seminars'],
-    queryFn: seminarsApi.listSeminars,
+    queryFn: () => seminarsApi.listSeminars({ upcoming: true }),
   });
+
+  // Filter seminars to include today onwards (API may return only future dates)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const seminars = useMemo(() => {
+    if (!seminarsRaw) return [];
+    return seminarsRaw.filter((s: Seminar) => new Date(s.date) >= today);
+  }, [seminarsRaw]);
 
   const { data: speakers, isLoading: speakersLoading } = useQuery({
     queryKey: ['speakers'],

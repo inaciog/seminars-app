@@ -8,9 +8,12 @@ import {
   Calendar,
   Trash2,
   FileText,
+  Eye,
 } from 'lucide-react';
 import { AddAvailabilityModal } from './AddAvailabilityModal';
 import { GeneratedLinkModal, EmailDraftModal, type EmailDraftData } from './SemesterPlanning';
+import { openSeminarDetails } from './SeminarsModule';
+import type { Seminar } from '@/types';
 
 interface SpeakerSuggestion {
   id: number;
@@ -62,6 +65,23 @@ export function SpeakersControlPanel() {
   const [emailDraft, setEmailDraft] = useState<EmailDraftData | null>(null);
   const [editingSuggestion, setEditingSuggestion] = useState<SpeakerSuggestion | null>(null);
   const [planFilter, setPlanFilter] = useState<number | ''>('');
+
+  // Fetch all seminars to find assigned ones
+  const { data: seminars = [] } = useQuery({
+    queryKey: ['speakers-panel-seminars'],
+    queryFn: async () => {
+      const r = await fetchWithAuth('/api/v1/seminars/seminars');
+      if (!r.ok) throw new Error('Failed to fetch seminars');
+      return r.json() as Promise<Seminar[]>;
+    },
+  });
+
+  // Create a map of seminar_id -> seminar for quick lookup
+  const seminarById = useMemo(() => {
+    const map = new Map<number, Seminar>();
+    seminars.forEach((s) => map.set(s.id, s));
+    return map;
+  }, [seminars]);
 
   const { data: suggestions = [], isLoading: suggestionsLoading } = useQuery({
     queryKey: ['speaker-suggestions-all', planFilter],
@@ -445,6 +465,20 @@ export function SpeakersControlPanel() {
                   </button>
                   {assignmentsBySuggestion?.[suggestion.id] && (
                     <>
+                      <button
+                        onClick={() => {
+                          const seminar = seminarById.get(assignmentsBySuggestion[suggestion.id].seminarId);
+                          if (seminar) {
+                            openSeminarDetails(seminar);
+                          }
+                        }}
+                        disabled={!seminarById.has(assignmentsBySuggestion[suggestion.id].seminarId)}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+                        title="View seminar details"
+                      >
+                        <Eye className="w-3 h-3" />
+                        View
+                      </button>
                       <button
                         onClick={() => generateInfoLinkMutation.mutate({
                           seminarId: assignmentsBySuggestion[suggestion.id].seminarId,

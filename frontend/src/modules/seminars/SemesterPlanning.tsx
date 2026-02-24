@@ -21,13 +21,16 @@ import {
   MessageSquare,
   Link as LinkIcon,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CalendarPicker } from '@/components/CalendarPicker';
 import { AddSpeakerModal } from './AddSpeakerModal';
 import { AddAvailabilityModal } from './AddAvailabilityModal';
+import { openSeminarDetails } from './SeminarsModule';
 import { isWithinInterval, parseISO, isSameDay } from 'date-fns';
+import type { Seminar } from '@/types';
 
 // Types
 interface SemesterPlan {
@@ -158,6 +161,22 @@ export function SemesterPlanning() {
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [unassignModal, setUnassignModal] = useState<{ slotId: number; seminarId: number; seminarTitle: string } | null>(null);
   const queryClient = useQueryClient();
+
+  // Fetch all seminars for viewing details
+  const { data: seminars = [] } = useQuery({
+    queryKey: ['planning-seminars', selectedPlanId],
+    queryFn: async () => {
+      const r = await fetchWithAuth('/api/v1/seminars/seminars');
+      if (!r.ok) throw new Error('Failed to fetch seminars');
+      return r.json() as Promise<Seminar[]>;
+    },
+  });
+
+  const seminarById = useMemo(() => {
+    const map = new Map<number, Seminar>();
+    seminars.forEach((s) => map.set(s.id, s));
+    return map;
+  }, [seminars]);
 
   const toggleNote = useCallback((id: string) => {
     setExpandedNotes(prev => ({ ...prev, [id]: !prev[id] }));
@@ -423,6 +442,14 @@ export function SemesterPlanning() {
                               deleteSlotMutation.mutate(slot.id);
                             }
                           }}
+                          onViewSeminar={() => {
+                            if (slot.assigned_seminar_id) {
+                              const seminar = seminarById.get(slot.assigned_seminar_id);
+                              if (seminar) {
+                                openSeminarDetails(seminar);
+                              }
+                            }
+                          }}
                         />
                       ))}
                     </div>
@@ -590,6 +617,7 @@ function SlotCard({
   onClick,
   onUnassign,
   onDelete,
+  onViewSeminar,
 }: { 
   slot: SeminarSlot; 
   isSelected: boolean;
@@ -597,6 +625,7 @@ function SlotCard({
   onClick: () => void;
   onUnassign?: () => void;
   onDelete?: () => void;
+  onViewSeminar?: () => void;
 }) {
   const statusColors = {
     available: 'bg-green-50 border-green-200 hover:border-green-300',
@@ -678,6 +707,18 @@ function SlotCard({
         )}
         {(slot.status === 'reserved' || slot.status === 'confirmed') && slot.assigned_seminar_id && (
           <div className="flex items-center gap-1">
+            {onViewSeminar && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onViewSeminar();
+                }}
+                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                title="View seminar details"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+            )}
             {onUnassign && (
               <button
                 onClick={(e) => {
