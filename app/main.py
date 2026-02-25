@@ -2772,11 +2772,16 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
             "status": s.status,
             "assigned_seminar_id": s.assigned_seminar_id
         }
-        # If slot has an assigned seminar, get the speaker name
+        # If slot has an assigned seminar, get the speaker name and seminar room
         if s.assigned_seminar_id:
-            seminar = db.get(Seminar, s.assigned_seminar_id)
+            seminar_stmt = select(Seminar).options(selectinload(Seminar.room)).where(Seminar.id == s.assigned_seminar_id)
+            seminar = db.exec(seminar_stmt).first()
             if seminar:
                 assigned_suggestion_id = s.assigned_suggestion_id  # Use stored value first
+                
+                # Use seminar's room if set, otherwise keep slot's room
+                if seminar.room:
+                    slot_data["room"] = seminar.room.name
                 
                 # Access speaker through the relationship
                 try:
