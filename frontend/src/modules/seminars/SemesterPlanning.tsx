@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { fetchWithAuth } from '@/api/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
   Plus, 
   Calendar, 
@@ -24,7 +25,7 @@ import {
   ChevronUp,
   Eye,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, CHINA_TIMEZONE, formatDateToYMDChina } from '@/lib/utils';
 import { CalendarPicker } from '@/components/CalendarPicker';
 import { AddSpeakerModal } from './AddSpeakerModal';
 import { AddAvailabilityModal } from './AddAvailabilityModal';
@@ -152,6 +153,7 @@ const addSlotToPlan = async (planId: number, slotData: { date: string; start_tim
 };
 
 export function SemesterPlanning() {
+  const { isEditor } = useAuth();
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [selectedSuggestion, setSelectedSuggestion] = useState<SpeakerSuggestion | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -203,6 +205,11 @@ export function SemesterPlanning() {
     queryFn: () => fetchPlanningBoard(selectedPlanId!),
     enabled: !!selectedPlanId,
   });
+
+  // Get the selected plan from the plans list
+  const selectedPlan = useMemo(() => {
+    return plans.find((p: SemesterPlan) => p.id === selectedPlanId);
+  }, [plans, selectedPlanId]);
 
   const assignMutation = useMutation({
     mutationFn: ({ suggestionId, slotId }: { suggestionId: number; slotId: number }) =>
@@ -280,9 +287,9 @@ export function SemesterPlanning() {
     },
   });
 
-  // Group slots by month
+  // Group slots by month (using China timezone)
   const slotsByMonth = boardData?.slots?.reduce((acc: Record<string, SeminarSlot[]>, slot) => {
-    const month = new Date(slot.date).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const month = new Date(slot.date).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: CHINA_TIMEZONE });
     if (!acc[month]) acc[month] = [];
     acc[month].push(slot);
     return acc;
@@ -347,18 +354,20 @@ export function SemesterPlanning() {
                     )}>
                       {plan.status}
                     </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete plan "${plan.name}"? This will also delete all associated slots.`)) {
-                          deletePlanMutation.mutate(plan.id);
-                        }
-                      }}
-                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                      title="Delete plan"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!isEditor && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Delete plan "${plan.name}"? This will also delete all associated slots.`)) {
+                            deletePlanMutation.mutate(plan.id);
+                          }
+                        }}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                        title="Delete plan"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <ChevronRight 
@@ -394,6 +403,7 @@ export function SemesterPlanning() {
                 Faculty Form
               </button>
               <button
+                type="button"
                 onClick={() => setShowAddDateModal(true)}
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
               >
@@ -433,15 +443,15 @@ export function SemesterPlanning() {
                               setUnassignModal({
                                 slotId: slot.id,
                                 seminarId: slot.assigned_seminar_id,
-                                seminarTitle: `${slot.assigned_speaker_name || 'Seminar'} on ${new Date(slot.date).toLocaleDateString()}`,
+                                seminarTitle: `${slot.assigned_speaker_name || 'Seminar'} on ${new Date(slot.date).toLocaleDateString('en-US', { timeZone: CHINA_TIMEZONE })}`,
                               });
                             }
                           }}
-                          onDelete={() => {
-                            if (confirm(`Delete this slot on ${new Date(slot.date).toLocaleDateString()}?`)) {
+                          onDelete={!isEditor ? () => {
+                            if (confirm(`Delete this slot on ${new Date(slot.date).toLocaleDateString('en-US', { timeZone: CHINA_TIMEZONE })}?`)) {
                               deleteSlotMutation.mutate(slot.id);
                             }
-                          }}
+                          } : undefined}
                           onViewSeminar={() => {
                             if (slot.assigned_seminar_id) {
                               const seminar = seminarById.get(slot.assigned_seminar_id);
@@ -490,11 +500,11 @@ export function SemesterPlanning() {
                         onClick={() => setSelectedSuggestion(
                           selectedSuggestion?.id === suggestion.id ? null : suggestion
                         )}
-                        onDelete={() => {
+                        onDelete={!isEditor ? () => {
                           if (confirm(`Delete suggestion for "${suggestion.speaker_name}"?`)) {
                             deleteSuggestionMutation.mutate(suggestion.id);
                           }
-                        }}
+                        } : undefined}
                         onAddAvailability={() => setEditingSuggestion(suggestion)}
                       />
                     ))}
@@ -563,10 +573,10 @@ export function SemesterPlanning() {
       )}
 
       {/* Add Date Modal */}
-      {showAddDateModal && selectedPlanId && boardData?.plan && (
+      {showAddDateModal && selectedPlanId && selectedPlan && (
         <AddDateModal
           planId={selectedPlanId}
-          defaultRoom={boardData.plan.default_room}
+          defaultRoom={selectedPlan.default_room || 'TBD'}
           onClose={() => setShowAddDateModal(false)}
         />
       )}
@@ -580,15 +590,17 @@ export function SemesterPlanning() {
               What would you like to do with the seminar &quot;{unassignModal.seminarTitle}&quot;?
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  deleteSeminarMutation.mutate(unassignModal.seminarId);
-                }}
-                disabled={deleteSeminarMutation.isPending}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-              >
-                Delete seminar
-              </button>
+              {!isEditor && (
+                <button
+                  onClick={() => {
+                    deleteSeminarMutation.mutate(unassignModal.seminarId);
+                  }}
+                  disabled={deleteSeminarMutation.isPending}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  Delete seminar
+                </button>
+              )}
               <button
                 onClick={() => unassignMutation.mutate(unassignModal.slotId)}
                 disabled={unassignMutation.isPending}
@@ -666,7 +678,7 @@ function SlotCard({
             {new Date(slot.date).getDate()}
           </div>
           <div className="text-xs text-gray-500 uppercase">
-            {new Date(slot.date).toLocaleString('en-US', { weekday: 'short' })}
+            {new Date(slot.date).toLocaleString('en-US', { weekday: 'short', timeZone: CHINA_TIMEZONE })}
           </div>
         </div>
         <div>
@@ -806,9 +818,6 @@ function SuggestionCard({
         </div>
 
         <div className="flex items-center gap-2 mt-2">
-          <span className={cn('px-2 py-0.5 text-xs rounded', statusColors[suggestion.status] || 'bg-gray-100')}>
-            {suggestion.status.replace(/_/g, ' ')}
-          </span>
           <span
             className="text-xs text-gray-500 cursor-default"
             title={suggestion.reason ? `Reason / context: ${suggestion.reason}` : undefined}
@@ -875,8 +884,8 @@ function SuggestionCard({
                         {isRange ? (
                           sameMonth ? (
                             <>
-                              {start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} 
-                              - {end.getDate()}, {end.getFullYear()}
+                              {start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: CHINA_TIMEZONE })} 
+                              - {end.toLocaleDateString('en-US', { day: 'numeric', timeZone: CHINA_TIMEZONE })}, {end.toLocaleDateString('en-US', { year: 'numeric', timeZone: CHINA_TIMEZONE })}
                             </>
                           ) : (
                             <>
@@ -886,7 +895,7 @@ function SuggestionCard({
                             </>
                           )
                         ) : (
-                          start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                          start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: CHINA_TIMEZONE })
                         )}
                       </span>
                       {hasNotes && (
@@ -957,18 +966,23 @@ function SuggestionCard({
 
 function AddDateModal({ planId, defaultRoom, onClose }: { planId: number; defaultRoom: string; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
   const [startTime, setStartTime] = useState('14:00');
   const [endTime, setEndTime] = useState('15:30');
   const [room, setRoom] = useState(defaultRoom);
 
-  const addSlotMutation = useMutation({
-    mutationFn: () => addSlotToPlan(planId, {
-      date: selectedDate!.toISOString().split('T')[0],
-      start_time: startTime,
-      end_time: endTime,
-      room: room,
-    }),
+  const addSlotsMutation = useMutation({
+    mutationFn: async () => {
+      // Create slots for all selected dates
+      for (const date of selectedDates) {
+        await addSlotToPlan(planId, {
+          date: formatDateToYMDChina(date),
+          start_time: startTime,
+          end_time: endTime,
+          room: room,
+        });
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['planning-board', planId] });
       onClose();
@@ -982,7 +996,7 @@ function AddDateModal({ planId, defaultRoom, onClose }: { planId: number; defaul
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl p-6 w-full max-w-lg">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold">Add Date to Plan</h2>
+          <h2 className="text-xl font-semibold">Add Dates to Plan</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
             <X className="w-5 h-5" />
           </button>
@@ -991,15 +1005,20 @@ function AddDateModal({ planId, defaultRoom, onClose }: { planId: number; defaul
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Date
+              Select Dates ({selectedDates.length} selected)
             </label>
             <div className="border border-gray-200 rounded-lg p-4">
               <CalendarPicker
-                selectedDates={selectedDate ? [selectedDate] : []}
-                onChange={(dates) => setSelectedDate(dates[0] || null)}
+                selectedDates={selectedDates}
+                onChange={(dates) => setSelectedDates(dates)}
                 minDate={new Date()}
               />
             </div>
+            {selectedDates.length > 0 && (
+              <p className="text-xs text-gray-500 mt-2">
+                Selected: {selectedDates.map(d => formatDateToYMDChina(d)).join(', ')}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -1047,11 +1066,11 @@ function AddDateModal({ planId, defaultRoom, onClose }: { planId: number; defaul
               Cancel
             </button>
             <button
-              onClick={() => addSlotMutation.mutate()}
-              disabled={!selectedDate || addSlotMutation.isPending}
+              onClick={() => addSlotsMutation.mutate()}
+              disabled={selectedDates.length === 0 || addSlotsMutation.isPending}
               className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
             >
-              {addSlotMutation.isPending ? 'Adding...' : 'Add Date'}
+              {addSlotsMutation.isPending ? 'Adding...' : `Add ${selectedDates.length} Date(s)`}
             </button>
           </div>
         </div>
@@ -1173,8 +1192,8 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
                 </p>
               ) : (
                 <p className="text-sm text-gray-600">
-                  {selectedDates[0].toLocaleDateString()} 
-                  {selectedDates.length > 1 && ` - ${selectedDates[selectedDates.length - 1].toLocaleDateString()}`}
+                  {selectedDates[0].toLocaleDateString('en-US', { timeZone: CHINA_TIMEZONE })} 
+                  {selectedDates.length > 1 && ` - ${selectedDates[selectedDates.length - 1].toLocaleDateString('en-US', { timeZone: CHINA_TIMEZONE })}`}
                 </p>
               )}
             </div>
@@ -1330,6 +1349,8 @@ export function EmailDraftModal({
   onClose: () => void;
 }) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
   const handleCopy = async (text: string, field: string) => {
     try {
@@ -1338,6 +1359,43 @@ export function EmailDraftModal({
       setTimeout(() => setCopiedField(null), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!draft.speakerEmail) {
+      setSendStatus({ type: 'error', message: 'No speaker email address available' });
+      return;
+    }
+
+    setIsSending(true);
+    setSendStatus(null);
+
+    try {
+      const response = await fetch('/api/v1/seminars/send-email', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('seminars_token') || ''}`
+        },
+        body: JSON.stringify({
+          to: draft.speakerEmail,
+          subject: emailContent.subject,
+          body: emailContent.body,
+          cc: draft.suggestedBy,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to send email');
+      }
+
+      setSendStatus({ type: 'success', message: `Email sent successfully to ${draft.speakerEmail}` });
+    } catch (err: any) {
+      setSendStatus({ type: 'error', message: err.message || 'Failed to send email' });
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -1566,13 +1624,50 @@ http://www.inaciobo.com`,
           </div>
         </div>
 
-        <div className="p-6 border-t border-gray-200">
-          <button
-            onClick={onClose}
-            className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-          >
-            Done
-          </button>
+        <div className="p-6 border-t border-gray-200 space-y-3">
+          {/* Send Status */}
+          {sendStatus && (
+            <div className={`p-3 rounded-lg text-sm ${
+              sendStatus.type === 'success' 
+                ? 'bg-green-50 text-green-700 border border-green-200' 
+                : 'bg-red-50 text-red-700 border border-red-200'
+            }`}>
+              {sendStatus.message}
+            </div>
+          )}
+          
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={handleSendEmail}
+              disabled={isSending || !draft.speakerEmail}
+              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isSending ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Mail className="w-4 h-4" />
+                  Send Email
+                </>
+              )}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+          
+          {!draft.speakerEmail && (
+            <p className="text-xs text-amber-600 text-center">
+              Cannot send: No email address for this speaker
+            </p>
+          )}
         </div>
       </div>
     </div>

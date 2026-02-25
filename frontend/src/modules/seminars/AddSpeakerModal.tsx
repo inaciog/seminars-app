@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { fetchWithAuth } from '@/api/client';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { X, Calendar, User, Mail, Building2, Lightbulb, Flag, Search, Plus, ChevronLeft } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, CHINA_TIMEZONE } from '@/lib/utils';
 import { CalendarPicker } from '@/components/CalendarPicker';
 
 interface Speaker {
@@ -190,8 +190,8 @@ export function AddSpeakerModal({ planId, onClose }: AddSpeakerModalProps) {
 
   const formatDateRange = (start: Date, end: Date) => {
     const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
-    const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: CHINA_TIMEZONE });
+    const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: CHINA_TIMEZONE });
     if (start.getTime() === end.getTime()) {
       return startStr + ', ' + start.getFullYear();
     }

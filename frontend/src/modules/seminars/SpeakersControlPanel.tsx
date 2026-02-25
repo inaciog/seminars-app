@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchWithAuth } from '@/api/client';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Users,
   Mail,
@@ -13,6 +14,7 @@ import {
 import { AddAvailabilityModal } from './AddAvailabilityModal';
 import { GeneratedLinkModal, EmailDraftModal, type EmailDraftData } from './SemesterPlanning';
 import { openSeminarDetails } from './SeminarsModule';
+import { CHINA_TIMEZONE } from '@/lib/utils';
 import type { Seminar } from '@/types';
 
 interface SpeakerSuggestion {
@@ -60,6 +62,7 @@ const WORKFLOW_LABELS: [string, string][] = [
 ];
 
 export function SpeakersControlPanel() {
+  const { isEditor } = useAuth();
   const queryClient = useQueryClient();
   const [generatedLink, setGeneratedLink] = useState<{ link: string; speaker_name: string; linkType: 'availability' | 'info' | 'status' } | null>(null);
   const [emailDraft, setEmailDraft] = useState<EmailDraftData | null>(null);
@@ -295,6 +298,7 @@ export function SpeakersControlPanel() {
       setEmailDraft({
         type,
         speakerName: suggestion.speaker_name,
+        speakerEmail: suggestion.speaker_email,
         suggestedBy: suggestion.suggested_by,
         availabilityLink,
       });
@@ -351,9 +355,9 @@ export function SpeakersControlPanel() {
       setEmailDraft({
         type,
         speakerName: suggestion.speaker_name,
-        slotDate: talkDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+        slotDate: talkDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: CHINA_TIMEZONE }),
         slotTime: `${assignment.startTime} - ${assignment.endTime}`,
-        deadlineDate: deadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+        deadlineDate: deadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: CHINA_TIMEZONE }),
         suggestedBy: suggestion.suggested_by,
         infoLink,
         statusLink,
@@ -435,16 +439,14 @@ export function SpeakersControlPanel() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                  {suggestion.status === 'pending' && (
-                    <button
-                      onClick={() => handleDraftEmail(suggestion, 'availability_request')}
-                      className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg"
-                      title="Draft availability request email"
-                    >
-                      <Mail className="w-3 h-3" />
-                      Email
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleDraftEmail(suggestion, 'availability_request')}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg"
+                    title="Draft availability request email"
+                  >
+                    <Mail className="w-3 h-3" />
+                    Email
+                  </button>
                   <button
                     onClick={() => generateAvailabilityLinkMutation.mutate(suggestion.id)}
                     disabled={generateAvailabilityLinkMutation.isPending}
@@ -519,17 +521,19 @@ export function SpeakersControlPanel() {
                       Dates
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete suggestion for "${suggestion.speaker_name}"?`)) {
-                        deleteSuggestionMutation.mutate(suggestion.id);
-                      }
-                    }}
-                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {!isEditor && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete suggestion for "${suggestion.speaker_name}"?`)) {
+                          deleteSuggestionMutation.mutate(suggestion.id);
+                        }
+                      }}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 

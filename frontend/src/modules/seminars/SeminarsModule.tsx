@@ -26,9 +26,10 @@ import {
   ClipboardList,
   Database
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow as formatDistanceToNowCustom, CHINA_TIMEZONE } from '@/lib/utils';
 import { seminarsApi, fetchWithAuth } from '@/api/client';
-import { formatDate, formatTime, cn } from '@/lib/utils';
+import { formatDate, formatTime, cn, formatDistanceToNow as formatDistanceToNowUtil } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
 import { SemesterPlanning } from './SemesterPlanning';
 import { SpeakersControlPanel } from './SpeakersControlPanel';
 import { SeminarDetailsModal } from './SeminarDetailsModal';
@@ -214,7 +215,8 @@ function SpeakerModal({ speaker, onClose, onSave, isLoading }: SpeakerModalProps
 }
 
 export function SeminarsModule() {
-  const [activeTab, setActiveTab] = useState<'activity' | 'upcoming' | 'speakers' | 'planning' | 'other'>('activity');
+  const { isEditor } = useAuth();
+  const [activeTab, setActiveTab] = useState<'activity' | 'upcoming' | 'speakers' | 'planning' | 'admin' | 'other'>('activity');
   const [speakerModalOpen, setSpeakerModalOpen] = useState(false);
   const [editingSpeaker, setEditingSpeaker] = useState<Speaker | null>(null);
   const [detailsSeminar, setDetailsSeminar] = useState<Seminar | null>(null);
@@ -351,7 +353,7 @@ export function SeminarsModule() {
           { id: 'upcoming', label: 'Upcoming Seminars', icon: Calendar },
           { id: 'speakers', label: 'Speakers', icon: Users },
           { id: 'planning', label: 'Semester Planning', icon: LayoutGrid },
-          { id: 'admin', label: 'Database', icon: Database },
+          ...(!isEditor ? [{ id: 'admin', label: 'Database', icon: Database }] : []),
           { id: 'other', label: 'Other', icon: MoreHorizontal },
         ].map((tab) => (
           <button
@@ -406,8 +408,8 @@ export function SeminarsModule() {
                         {evt.semester_plan_id && (
                           <span>Plan {evt.semester_plan_id}</span>
                         )}
-                        <span title={createdAt.toLocaleString()}>
-                          {formatDistanceToNow(createdAt, { addSuffix: true })}
+                        <span title={createdAt.toLocaleString('en-US', { timeZone: CHINA_TIMEZONE })}>
+                          {formatDistanceToNowUtil(createdAt.toISOString())}
                         </span>
                       </div>
                     </div>
@@ -442,11 +444,6 @@ export function SeminarsModule() {
                 onUpdateStatus={(updates) => 
                   updateStatusMutation.mutate({ id: seminar.id, updates })
                 }
-                onDelete={() => {
-                  if (confirm(`Delete seminar "${seminar.title}"?`)) {
-                    deleteSeminarMutation.mutate(seminar.id);
-                  }
-                }}
                 onViewDetails={() => setDetailsSeminar(seminar)}
                 onViewFullPage={() => setViewPageSeminar(seminar)}
               />
@@ -794,85 +791,8 @@ function SeminarCard({
           </div>
         </div>
         
-        <span className={cn(
-          'px-3 py-1 text-xs font-medium rounded-full',
-          seminar.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-          seminar.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-          'bg-amber-100 text-amber-800'
-        )}>
-          {seminar.status}
-        </span>
       </div>
 
-      {/* Workflow Steps */}
-      <div className="mt-4 pt-4 border-t border-gray-100">
-        <WorkflowSteps seminarId={seminar.id} speakerId={seminar.speaker_id} />
-      </div>
-    </div>
-  );
-}
-
-function WorkflowSteps({ seminarId, speakerId }: { seminarId: number; speakerId: number | null }) {
-  const { data: workflow } = useQuery({
-    queryKey: ['seminar-workflow', seminarId],
-    queryFn: async () => {
-      if (!speakerId) return null;
-      // Find the suggestion for this speaker and get workflow
-      const r = await fetchWithAuth(`/api/v1/seminars/speaker-suggestions?speaker_id=${speakerId}`);
-      if (!r.ok) return null;
-      const suggestions = await r.json();
-      if (!suggestions?.length) return null;
-      
-      // Get workflow for the first suggestion
-      const suggestion = suggestions[0];
-      const wfR = await fetchWithAuth(`/api/v1/seminars/speaker-suggestions/${suggestion.id}/workflow`);
-      if (!wfR.ok) return null;
-      return wfR.json();
-    },
-    enabled: !!speakerId,
-  });
-
-  // Determine current step
-  let currentStep = 1;
-  if (workflow) {
-    if (workflow.proposal_approved) currentStep = 4;
-    else if (workflow.proposal_submitted) currentStep = 3;
-    else if (workflow.availability_dates_received) currentStep = 2;
-  }
-
-  const steps = [
-    { num: 1, label: 'Availability', icon: Calendar },
-    { num: 2, label: 'Date Assigned', icon: CheckCircle },
-    { num: 3, label: 'Info Submitted', icon: FileText },
-    { num: 4, label: 'Approved', icon: CheckCircle },
-  ];
-
-  return (
-    <div className="flex items-center gap-1">
-      {steps.map((step, idx) => {
-        const isCompleted = currentStep > step.num;
-        const isCurrent = currentStep === step.num;
-        const Icon = step.icon;
-        
-        return (
-          <div key={step.num} className="flex items-center">
-            <div
-              className={cn(
-                'flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium',
-                isCompleted && 'bg-green-100 text-green-700',
-                isCurrent && 'bg-blue-100 text-blue-700',
-                !isCompleted && !isCurrent && 'bg-gray-100 text-gray-500'
-              )}
-            >
-              <Icon className="w-3 h-3" />
-              {step.label}
-            </div>
-            {idx < steps.length - 1 && (
-              <div className={cn('w-4 h-px mx-1', isCompleted ? 'bg-green-300' : 'bg-gray-200')} />
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }

@@ -79,9 +79,9 @@ class DatabaseStatusResponse(BaseModel):
 # ============================================================================
 
 def _require_owner(user: dict):
-    """Require owner role for destructive operations."""
+    """Require owner or admin role for destructive operations."""
     role = user.get('role', '')
-    if role != 'owner':
+    if role not in ('owner', 'admin'):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only owners can perform database administration operations"

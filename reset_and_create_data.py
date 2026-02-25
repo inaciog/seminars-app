@@ -5,10 +5,24 @@ This ensures data integrity through proper API procedures.
 
 import requests
 import json
+import os
 from datetime import datetime, timedelta
 
 BASE_URL = "https://seminars-app.fly.dev"
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImluYWNpbyIsIm5hbWUiOiJJbmFjaW8iLCJyb2xlIjoib3duZXIiLCJpYXQiOjE3NzE1MDUyMzMsImV4cCI6MTc3NDA5NzIzM30.q1I_xwpKFZRPXHrLclwh_4nqYC1dqvPwLt4QL_Hd8Hk"
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "i486983nacio:!")
+
+# Get auth token via admin password
+def get_auth_token():
+    """Login with admin password to get auth token."""
+    resp = requests.post(
+        f"{BASE_URL}/api/auth/login-admin",
+        json={"password": ADMIN_PASSWORD}
+    )
+    if resp.status_code == 200:
+        return resp.json()["token"]
+    raise Exception(f"Failed to authenticate: {resp.text}")
+
+TOKEN = get_auth_token()
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",

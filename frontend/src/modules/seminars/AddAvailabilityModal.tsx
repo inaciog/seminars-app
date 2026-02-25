@@ -3,6 +3,7 @@ import { fetchWithAuth } from '@/api/client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Calendar, Clock, CheckCircle } from 'lucide-react';
 import { CalendarPicker } from '@/components/CalendarPicker';
+import { CHINA_TIMEZONE } from '@/lib/utils';
 
 interface Availability {
   id?: number;
@@ -128,8 +129,8 @@ export function AddAvailabilityModal({
     const end = new Date(endStr);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '—';
     const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
-    const startFmt = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const endFmt = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const startFmt = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: CHINA_TIMEZONE });
+    const endFmt = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: CHINA_TIMEZONE });
     if (startStr === endStr) return startFmt + ', ' + start.getFullYear();
     return sameMonth
       ? `${startFmt}-${end.getDate()}, ${end.getFullYear()}`
@@ -196,9 +197,9 @@ export function AddAvailabilityModal({
                     key={idx}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
                   >
-                    {range.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    {range.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: CHINA_TIMEZONE })}
                     {range.start.getTime() !== range.end.getTime() && (
-                      <> - {range.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</>
+                      <> - {range.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: CHINA_TIMEZONE })}</>
                     )}
                     <button
                       onClick={() => {

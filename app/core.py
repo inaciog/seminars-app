@@ -23,12 +23,21 @@ class Settings(BaseSettings):
     jwt_secret: str = "your-secret-key-change-in-production"
     api_secret: str = "your-api-secret-for-dashboard"
     master_password: str = ""  # Set via MASTER_PASSWORD env var for speaker token access
+    editor_password: str = ""  # Set via EDITOR_PASSWORD env var for limited editor access
     database_url: str = "/data/seminars.db"
     uploads_dir: str = "/data/uploads"
     auth_service_url: str = "https://inacio-auth.fly.dev"
     app_url: str = "https://seminars-app.fly.dev"
     feature_semester_plan_v2: bool = False
     fallback_mirror_dir: str = "fallback-mirror"
+    
+    # Email settings (SMTP)
+    smtp_host: str = ""  # e.g., smtp.gmail.com
+    smtp_port: int = 587
+    smtp_user: str = ""  # e.g., your-email@gmail.com
+    smtp_password: str = ""  # app-specific password
+    smtp_from: str = ""  # sender email address
+    smtp_from_name: str = "Seminar Organizer"  # sender name
 
     class Config:
         env_file = ".env"
@@ -108,13 +117,34 @@ def verify_token(token: str) -> Optional[dict]:
         return None
 
 
+def create_editor_token() -> str:
+    """Create a simple editor token (just a hashed prefix for identification)."""
+    return "editor_" + settings.editor_password[:8] if settings.editor_password else ""
+
+
+def verify_editor_token(token: str) -> bool:
+    """Verify if token is a valid editor token."""
+    if not settings.editor_password:
+        return False
+    expected = "editor_" + settings.editor_password[:8]
+    return token == expected
+
+
+def verify_admin_token(token: str) -> bool:
+    """Verify if token is a valid admin token (from master password)."""
+    if not settings.master_password:
+        return False
+    expected = "admin_" + settings.master_password[:8]
+    return token == expected
+
+
 async def get_current_user(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     token: Optional[str] = Query(None),
     access_code: Optional[str] = Query(None)
 ) -> dict:
-    """Get current user from token (header, query param, or cookie)."""
+    """Get current user from token (header, query param, or cookie) or editor password."""
     auth_token = credentials.credentials if credentials else None
     if not auth_token:
         auth_token = token
@@ -127,9 +157,20 @@ async def get_current_user(
         logger.warning(f"Authentication failed: No token provided - {request.method} {request.url.path}")
         raise HTTPException(status_code=401, detail="Not authenticated")
     
+    # Check if it's an editor token
+    if verify_editor_token(auth_token):
+        return {"id": "editor", "role": "editor", "name": "Editor User"}
+    
+    # Check if it's an admin token (from master password)
+    if verify_admin_token(auth_token):
+        return {"id": "admin", "role": "admin", "name": "Admin User"}
+    
+    # Try JWT verification
     user = verify_token(auth_token)
     if not user:
         logger.warning(f"Authentication failed: Invalid token - {request.method} {request.url.path}")
         raise HTTPException(status_code=401, detail="Invalid token")
     
+    # Add admin role for JWT users
+    user["role"] = "admin"
     return user

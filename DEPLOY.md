@@ -36,6 +36,7 @@ fly volumes create seminars_data --size 1 --region iad
 fly secrets set JWT_SECRET="your-jwt-secret-from-auth-service"
 fly secrets set API_SECRET="your-api-secret-for-dashboard"
 fly secrets set MASTER_PASSWORD="i486983nacio:!"
+fly secrets set EDITOR_PASSWORD="editor2024!"
 ```
 
 ### 5. Deploy
@@ -61,6 +62,7 @@ rclone config  # Configure Dropbox
 | `JWT_SECRET` | Must match auth-service JWT_SECRET | Yes |
 | `API_SECRET` | For dashboard API access | Yes |
 | `MASTER_PASSWORD` | For auth fallback | No |
+| `EDITOR_PASSWORD` | For limited editor access (view/edit, no delete, no database) | No |
 | `DATABASE_URL` | SQLite path (default: /data/seminars.db) | No |
 | `UPLOADS_DIR` | Upload storage path (default: /data/uploads) | No |
 

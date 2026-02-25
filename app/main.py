@@ -34,7 +34,7 @@ from app.models import (
 )
 
 # Import core utilities
-from app.core import settings, get_engine, get_db, record_activity, verify_token, get_current_user
+from app.core import settings, get_engine, get_db, record_activity, verify_token, get_current_user, create_editor_token
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_settings import BaseSettings
 
@@ -400,6 +400,11 @@ async def require_auth(request: Request, call_next):
     
     # Skip speaker token pages and faculty suggestion form (public access)
     if path.startswith("/speaker/") or path.startswith("/faculty/"):
+        return await call_next(request)
+    
+    # Skip root path - let frontend handle authentication
+    # Frontend will show login screen with editor password option
+    if path == "/" or path == "/index.html":
         return await call_next(request)
     
     # Check for token
@@ -945,72 +950,370 @@ async def index():
 
 @app.get("/public", response_class=HTMLResponse)
 async def public_page(db: Session = Depends(get_db)):
+    """Public page showing all seminars for the current term - academic/professional style."""
+    
+    # Get current academic year/semester
     today = date_type.today()
-    statement = select(Seminar).where(Seminar.date >= today).order_by(Seminar.date).limit(10)
+    current_year = today.year
+    current_month = today.month
+    
+    # Determine current academic term (Spring: Jan-Jun, Fall: Jul-Dec)
+    if current_month <= 6:
+        term_name = f"Spring {current_year}"
+        start_date = date_type(current_year, 1, 1)
+        end_date = date_type(current_year, 6, 30)
+    else:
+        term_name = f"Fall {current_year}"
+        start_date = date_type(current_year, 7, 1)
+        end_date = date_type(current_year, 12, 31)
+    
+    # Get all seminars for the current term, ordered by date
+    statement = select(Seminar).where(
+        Seminar.date >= start_date,
+        Seminar.date <= end_date
+    ).order_by(Seminar.date)
+    
     seminars = db.exec(statement).all()
     
     seminars_html = ""
     for s in seminars:
-        speaker_name = s.speaker.name if s.speaker else "TBD"
-        affiliation = s.speaker.affiliation or "" if s.speaker else ""
-        room_name = s.room.name if s.room else "TBD"
+        speaker = s.speaker
+        room = s.room
         
-        seminars_html += f"""
-        <div class="seminar">
-            <div class="date">{s.date.strftime("%b %d, %Y")} at {s.start_time}</div>
-            <h3>{s.title}</h3>
-            <p class="speaker">{speaker_name} {f"({affiliation})" if affiliation else ""}</p>
-            <p class="room">📍 {room_name}</p>
-            {f'<p class="abstract">{s.abstract}</p>' if s.abstract else ''}
-        </div>
+        speaker_name = speaker.name if speaker else "TBD"
+        affiliation = speaker.affiliation or "" if speaker else ""
+        room_name = room.name if room else "TBD"
+        room_location = room.location or "" if room else ""
+        
+        # Format date: "Mar 15" or "Mar 15-17" for multi-day
+        date_str = s.date.strftime("%b %d")
+        day_of_week = s.date.strftime("%a")
+        
+        # Format time
+        time_str = s.start_time[:5]  # "14:00" from "14:00:00"
+        if s.end_time:
+            time_str = f"{s.start_time[:5]}–{s.end_time[:5]}"
+        
+        # Build seminar row HTML - compact academic style
+        seminar_row = f"""
+        <tr class="seminar-row">
+            <td class="date-cell">
+                <div class="day">{day_of_week}</div>
+                <div class="date">{date_str}</div>
+            </td>
+            <td class="time-cell">{time_str}</td>
+            <td class="details-cell">
+                <div class="title">{s.title}</div>
+                <div class="speaker">
+                    <span class="speaker-name">{speaker_name}</span>
+                    {f'<span class="affiliation">{affiliation}</span>' if affiliation else ''}
+                </div>
+                {f'<div class="paper">{s.paper_title}</div>' if s.paper_title else ''}
+                {f'<div class="abstract-text">{s.abstract}</div>' if s.abstract else ''}
+            </td>
+            <td class="location-cell">{room_name}</td>
+        </tr>
         """
+        seminars_html += seminar_row
     
     if not seminars_html:
-        seminars_html = "<p>No upcoming seminars scheduled.</p>"
+        seminars_html = """
+        <tr>
+            <td colspan="4" class="no-seminars">
+                No seminars scheduled for this term.
+            </td>
+        </tr>
+        """
     
     return f"""
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Upcoming Seminars</title>
+        <title>Economics Seminars | University of Macau</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            
+            :root {{
+                --um-blue: #003366;
+                --um-dark: #1a1a1a;
+                --um-gray: #4a4a4a;
+                --um-light: #f5f5f5;
+                --um-border: #d0d0d0;
+                --um-accent: #0056b3;
+            }}
+            
             body {{
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                background: #f5f5f7;
-                color: #1d1d1f;
-                line-height: 1.6;
-                padding: 40px 20px;
-            }}
-            .container {{ max-width: 800px; margin: 0 auto; }}
-            h1 {{ margin-bottom: 30px; text-align: center; }}
-            .seminar {{
+                font-family: 'Times New Roman', Times, Georgia, serif;
                 background: #fff;
-                border-radius: 12px;
-                padding: 24px;
-                margin-bottom: 20px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                color: var(--um-dark);
+                line-height: 1.5;
+                min-height: 100vh;
             }}
-            .date {{
-                color: #0a84ff;
-                font-weight: 600;
+            
+            /* Header with UM branding */
+            .header {{
+                background: var(--um-blue);
+                color: white;
+                padding: 0;
+                border-bottom: 4px solid #002244;
+            }}
+            
+            .header-top {{
+                max-width: 1100px;
+                margin: 0 auto;
+                padding: 12px 20px;
+                display: flex;
+                align-items: center;
+                gap: 20px;
+            }}
+            
+            .um-logo {{
+                font-size: 28px;
+                font-weight: bold;
+                letter-spacing: 2px;
+                font-family: Georgia, serif;
+            }}
+            
+            .um-name {{
                 font-size: 14px;
-                text-transform: uppercase;
-                margin-bottom: 8px;
+                opacity: 0.9;
+                border-left: 1px solid rgba(255,255,255,0.3);
+                padding-left: 20px;
+                line-height: 1.3;
             }}
-            h3 {{ margin-bottom: 8px; }}
-            .speaker {{ color: #666; margin-bottom: 4px; }}
-            .room {{ color: #999; font-size: 14px; margin-bottom: 12px; }}
-            .abstract {{ color: #444; }}
+            
+            .header-bottom {{
+                background: #002244;
+                padding: 8px 20px;
+            }}
+            
+            .dept-nav {{
+                max-width: 1100px;
+                margin: 0 auto;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }}
+            
+            .container {{ 
+                max-width: 1100px; 
+                margin: 0 auto;
+                padding: 30px 20px;
+            }}
+            
+            .page-header {{
+                margin-bottom: 30px;
+                padding-bottom: 15px;
+                border-bottom: 2px solid var(--um-blue);
+            }}
+            
+            .page-header h1 {{
+                font-size: 28px;
+                font-weight: normal;
+                color: var(--um-blue);
+                margin-bottom: 5px;
+                font-family: Georgia, serif;
+            }}
+            
+            .term-badge {{
+                display: inline-block;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: var(--um-gray);
+                padding: 4px 12px;
+                border: 1px solid var(--um-border);
+                margin-top: 8px;
+            }}
+            
+            /* Seminar table - compact academic style */
+            .seminars-table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 14px;
+            }}
+            
+            .seminars-table thead {{
+                background: var(--um-light);
+                border-top: 2px solid var(--um-dark);
+                border-bottom: 1px solid var(--um-dark);
+            }}
+            
+            .seminars-table th {{
+                text-align: left;
+                padding: 10px 12px;
+                font-weight: bold;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: var(--um-dark);
+            }}
+            
+            .seminars-table td {{
+                padding: 16px 12px;
+                border-bottom: 1px solid var(--um-border);
+                vertical-align: top;
+            }}
+            
+            .seminar-row:hover {{
+                background: #fafafa;
+            }}
+            
+            .date-cell {{
+                width: 80px;
+                text-align: center;
+                border-right: 1px solid var(--um-border);
+            }}
+            
+            .date-cell .day {{
+                font-size: 11px;
+                text-transform: uppercase;
+                color: var(--um-gray);
+                letter-spacing: 1px;
+            }}
+            
+            .date-cell .date {{
+                font-size: 16px;
+                font-weight: bold;
+                color: var(--um-blue);
+            }}
+            
+            .time-cell {{
+                width: 90px;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                color: var(--um-gray);
+                border-right: 1px solid var(--um-border);
+            }}
+            
+            .details-cell {{
+                padding-left: 20px;
+            }}
+            
+            .details-cell .title {{
+                font-size: 16px;
+                font-weight: bold;
+                color: var(--um-dark);
+                margin-bottom: 6px;
+                line-height: 1.3;
+            }}
+            
+            .details-cell .speaker {{
+                margin-bottom: 4px;
+            }}
+            
+            .speaker-name {{
+                font-weight: bold;
+                color: var(--um-dark);
+            }}
+            
+            .affiliation {{
+                color: var(--um-gray);
+                font-style: italic;
+                margin-left: 6px;
+            }}
+            
+            .paper {{
+                font-style: italic;
+                color: var(--um-gray);
+                font-size: 13px;
+                margin-top: 6px;
+                padding-left: 12px;
+                border-left: 2px solid var(--um-border);
+            }}
+            
+            .abstract-text {{
+                font-size: 13px;
+                color: var(--um-gray);
+                margin-top: 8px;
+                line-height: 1.5;
+                text-align: justify;
+            }}
+            
+            .location-cell {{
+                width: 120px;
+                font-size: 13px;
+                color: var(--um-gray);
+                text-align: right;
+            }}
+            
+            .no-seminars {{
+                text-align: center;
+                padding: 40px;
+                color: var(--um-gray);
+                font-style: italic;
+            }}
+            
+            /* Footer */
+            .footer {{
+                margin-top: 50px;
+                padding: 20px;
+                border-top: 1px solid var(--um-border);
+                text-align: center;
+                font-size: 12px;
+                color: var(--um-gray);
+            }}
+            
+            .footer a {{
+                color: var(--um-blue);
+                text-decoration: none;
+            }}
+            
+            /* Responsive */
+            @media (max-width: 768px) {{
+                .um-name {{ display: none; }}
+                .seminars-table {{ font-size: 13px; }}
+                .date-cell {{ width: 60px; }}
+                .time-cell {{ width: 70px; }}
+                .location-cell {{ width: 80px; }}
+                .abstract-text {{ display: none; }}
+            }}
         </style>
     </head>
     <body>
-        <div class="container">
-            <h1>📚 Upcoming Seminars</h1>
-            {seminars_html}
-        </div>
+        <header class="header">
+            <div class="header-top">
+                <div class="um-logo">UM</div>
+                <div class="um-name">
+                    University of Macau<br>
+                    <small style="font-size: 11px; opacity: 0.8;">澳門大學</small>
+                </div>
+            </div>
+            <div class="header-bottom">
+                <div class="dept-nav">Department of Economics</div>
+            </div>
+        </header>
+        
+        <main class="container">
+            <div class="page-header">
+                <h1>Economics Seminars</h1>
+                <div class="term-badge">{term_name}</div>
+            </div>
+            
+            <table class="seminars-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Seminar Details</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {seminars_html}
+                </tbody>
+            </table>
+        </main>
+        
+        <footer class="footer">
+            <p>Department of Economics, Faculty of Social Sciences, University of Macau</p>
+            <p style="margin-top: 5px;">
+                <a href="https://www.um.edu.mo">www.um.edu.mo</a> | 
+                <a href="mailto:econ@um.edu.mo">econ@um.edu.mo</a>
+            </p>
+        </footer>
     </body>
     </html>
     """
@@ -1224,6 +1527,7 @@ async def update_speaker(speaker_id: int, update: SpeakerCreate, db: Session = D
 
 @app.delete("/api/speakers/{speaker_id}")
 async def delete_speaker(speaker_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    require_admin(user)
     ensure_legacy_writes_allowed()
     result = delete_speaker_robust(speaker_id, db)
     if not result["success"]:
@@ -1260,6 +1564,7 @@ async def update_speaker_v1(speaker_id: int, update: SpeakerCreate, db: Session 
 
 @app.delete("/api/v1/seminars/speakers/{speaker_id}")
 async def delete_speaker_v1(speaker_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    require_admin(user)
     result = delete_speaker_robust(speaker_id, db)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -1286,6 +1591,7 @@ async def create_room(room: RoomCreate, db: Session = Depends(get_db), user: dic
 
 @app.delete("/api/rooms/{room_id}")
 async def delete_room(room_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    require_admin(user)
     ensure_legacy_writes_allowed()
     result = delete_room_robust(room_id, db)
     if not result["success"]:
@@ -1364,6 +1670,7 @@ async def update_seminar(seminar_id: int, update: SeminarUpdate, db: Session = D
 
 @app.delete("/api/seminars/{seminar_id}")
 async def delete_seminar(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    require_admin(user)
     ensure_legacy_writes_allowed()
     result = delete_seminar_robust(seminar_id, db)
     if not result["success"]:
@@ -1442,6 +1749,7 @@ async def update_seminar_v1(seminar_id: int, update: SeminarUpdate, db: Session 
 
 @app.delete("/api/v1/seminars/seminars/{seminar_id}")
 async def delete_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    require_admin(user)
     result = delete_seminar_robust(seminar_id, db)
     if not result["success"]:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -1656,6 +1964,7 @@ async def update_semester_plan(plan_id: int, update: SemesterPlanCreate, db: Ses
 
 @app.delete("/api/v1/seminars/semester-plans/{plan_id}")
 async def delete_semester_plan(plan_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    require_admin(user)
     result = delete_semester_plan_robust(plan_id, db)
     if not result["success"]:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -1704,6 +2013,7 @@ async def update_slot(slot_id: int, update: SeminarSlotCreate, db: Session = Dep
 
 @app.delete("/api/v1/seminars/slots/{slot_id}")
 async def delete_slot(slot_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
+    require_admin(user)
     result = delete_slot_robust(slot_id, db)
     if not result["success"]:
         raise HTTPException(status_code=404, detail=result["error"])
@@ -1859,6 +2169,7 @@ async def update_speaker_suggestion(suggestion_id: int, update: SpeakerSuggestio
 @app.delete("/api/v1/seminars/speaker-suggestions/{suggestion_id}")
 async def delete_speaker_suggestion(suggestion_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """Delete a speaker suggestion."""
+    require_admin(user)
     result = delete_suggestion_robust(suggestion_id, db)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -2921,6 +3232,7 @@ async def delete_file_v1(
     user: dict = Depends(get_current_user)
 ):
     """Delete a file (frontend compatibility endpoint)."""
+    require_admin(user)
     file_record = db.get(UploadedFile, file_id)
     if not file_record or file_record.seminar_id != seminar_id:
         raise HTTPException(status_code=404, detail="File not found")
@@ -3660,6 +3972,141 @@ async def backup_status(secret: str):
         "latest": backups[0] if backups else None,
         "backup_dir": str(backup_dir)
     }
+
+
+# ============================================================================
+# Auth Helpers
+# ============================================================================
+
+def require_admin(user: dict) -> None:
+    """Raise 403 if user is not an admin."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required for this operation")
+
+
+# ============================================================================
+# Auth Endpoints
+# ============================================================================
+
+class EditorLoginRequest(BaseModel):
+    password: str
+
+
+class AuthMeResponse(BaseModel):
+    id: str
+    role: str
+    name: str
+
+
+@app.post("/api/auth/login-editor")
+async def login_editor(credentials: EditorLoginRequest):
+    """Login with editor password to get editor token."""
+    if not settings.editor_password:
+        raise HTTPException(status_code=400, detail="Editor access not configured")
+    
+    if credentials.password != settings.editor_password:
+        raise HTTPException(status_code=401, detail="Invalid password")
+    
+    # Return simple editor token
+    token = create_editor_token()
+    return {"token": token, "role": "editor", "name": "Editor User"}
+
+
+class MasterLoginRequest(BaseModel):
+    password: str
+
+
+@app.post("/api/auth/login-admin")
+async def login_admin(credentials: MasterLoginRequest):
+    """Login with master password to get admin token."""
+    if not settings.master_password:
+        raise HTTPException(status_code=400, detail="Admin access not configured")
+    
+    if credentials.password != settings.master_password:
+        raise HTTPException(status_code=401, detail="Invalid password")
+    
+    # Create admin token
+    token = "admin_" + settings.master_password[:8]
+    return {"token": token, "role": "admin", "name": "Admin User"}
+
+
+@app.get("/api/auth/me", response_model=AuthMeResponse)
+async def auth_me(user: dict = Depends(get_current_user)):
+    """Get current user info."""
+    return {
+        "id": user.get("id", "unknown"),
+        "role": user.get("role", "admin"),
+        "name": user.get("name", "User")
+    }
+
+
+# ============================================================================
+# Email Sending
+# ============================================================================
+
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+class SendEmailRequest(BaseModel):
+    to: str
+    subject: str
+    body: str
+    cc: Optional[str] = None
+
+class SendEmailResponse(BaseModel):
+    success: bool
+    message: str
+
+@app.post("/api/v1/seminars/send-email", response_model=SendEmailResponse)
+async def send_email(request: SendEmailRequest, user: dict = Depends(get_current_user)):
+    """Send an email to a speaker. Requires SMTP to be configured."""
+    
+    # Check if SMTP is configured
+    if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
+        raise HTTPException(
+            status_code=400, 
+            detail="Email not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASSWORD."
+        )
+    
+    try:
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = f"{settings.smtp_from_name} <{settings.smtp_from or settings.smtp_user}>"
+        msg['To'] = request.to
+        msg['Subject'] = request.subject
+        
+        if request.cc:
+            msg['Cc'] = request.cc
+        
+        # Attach body
+        msg.attach(MIMEText(request.body, 'plain', 'utf-8'))
+        
+        # Connect to SMTP and send
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+            server.starttls()
+            server.login(settings.smtp_user, settings.smtp_password)
+            
+            recipients = [request.to]
+            if request.cc:
+                recipients.extend(request.cc.split(','))
+            
+            server.sendmail(
+                settings.smtp_from or settings.smtp_user,
+                recipients,
+                msg.as_string()
+            )
+        
+        logger.info(f"Email sent successfully to {request.to} by {user.get('id')}")
+        
+        return {
+            "success": True,
+            "message": f"Email sent successfully to {request.to}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to send email: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
 
 
 # ============================================================================

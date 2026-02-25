@@ -1,11 +1,11 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import type { ActionResult } from '@/types';
 
-// Get token from URL or localStorage
+// Get token from URL, localStorage, or auth storage
 const getToken = (): string | null => {
   if (typeof window === 'undefined') return null;
   
-  // Check URL first
+  // Check URL first (for JWT from auth service)
   const params = new URLSearchParams(window.location.search);
   const urlToken = params.get('token');
   if (urlToken) {
@@ -15,7 +15,16 @@ const getToken = (): string | null => {
     return urlToken;
   }
   
-  // Then check localStorage
+  // Check auth storage (for editor login)
+  const stored = localStorage.getItem('seminars_auth');
+  if (stored) {
+    try {
+      const auth = JSON.parse(stored);
+      if (auth.token) return auth.token;
+    } catch {}
+  }
+  
+  // Then check legacy localStorage
   return localStorage.getItem('seminars_token');
 };
 
