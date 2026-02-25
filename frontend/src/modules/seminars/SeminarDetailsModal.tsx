@@ -165,6 +165,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
   
   const [initialized, setInitialized] = useState(false);
   const [, forceUpdate] = useState({});
+  const [roomValue, setRoomValue] = useState('');
   
   const { data: details, isLoading } = useQuery({
     queryKey: ['seminar-details', seminarId],
@@ -218,6 +219,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         estimated_hotel_cost: details.info?.estimated_hotel_cost?.toString() || '',
         ticket_purchase_info: details.info?.ticket_purchase_info || '',
       };
+      setRoomValue(details.room || '');
       setInitialized(true);
       forceUpdate({}); // Trigger one re-render to populate defaultValues
     }
@@ -237,6 +239,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
     const payload = {
       title: formValues.current.title,
       abstract: formValues.current.abstract,
+      room: roomValue,
       check_in_date: formValues.current.check_in_date,
       check_out_date: formValues.current.check_out_date,
       passport_number: formValues.current.passport_number,
@@ -270,6 +273,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         ...old,
         title: formValues.current.title,
         abstract: formValues.current.abstract,
+        room: roomValue,
         info: {
           ...old?.info,
           check_in_date: formValues.current.check_in_date,
@@ -419,9 +423,11 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                     </FormField>
                     
                     <FormField label="Room">
-                      <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700">
-                        {details?.room || 'Not assigned'}
-                      </div>
+                      <TextInput 
+                        value={roomValue} 
+                        onChange={(val) => setRoomValue(val)}
+                        placeholder="Enter room (e.g., E11-4047)"
+                      />
                     </FormField>
                     
                     <FormField label="Abstract">

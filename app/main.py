@@ -307,6 +307,7 @@ class SpeakerInfoSubmit(BaseModel):
 class SeminarDetailsUpdate(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
+    room: Optional[str] = None
     check_in_date: Optional[str] = None
     check_out_date: Optional[str] = None
     passport_number: Optional[str] = None
@@ -1829,6 +1830,18 @@ async def update_seminar_details_v1(
         seminar.title = data.title
     if data.abstract is not None:
         seminar.abstract = data.abstract
+    if data.room is not None:
+        # Find or create room by name
+        room_stmt = select(Room).where(Room.name == data.room)
+        room = db.exec(room_stmt).first()
+        if room:
+            seminar.room_id = room.id
+        else:
+            # Create new room
+            new_room = Room(name=data.room, location="")
+            db.add(new_room)
+            db.flush()
+            seminar.room_id = new_room.id
     
     # Get or create details
     details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
