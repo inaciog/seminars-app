@@ -1784,6 +1784,9 @@ async def delete_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user
 @app.get("/api/v1/seminars/seminars/{seminar_id}/details")
 async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get seminar with details."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     statement = select(Seminar).options(
         selectinload(Seminar.room),
         selectinload(Seminar.speaker)
@@ -1791,6 +1794,9 @@ async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db),
     seminar = db.exec(statement).first()
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
+    
+    room_loaded = seminar.room.name if seminar.room else None
+    logger.info(f"GET DETAILS: seminar_id={seminar_id}, room_id={seminar.room_id}, room_loaded='{room_loaded}'")
     
     # Get or create details
     details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
@@ -1862,9 +1868,14 @@ async def update_seminar_details_v1(
     user: dict = Depends(get_current_user)
 ):
     """Update seminar details."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     seminar = db.get(Seminar, seminar_id)
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
+    
+    logger.info(f"UPDATE DETAILS: seminar_id={seminar_id}, room_before={seminar.room_id}, room_sent='{data.room}'")
     
     # Update seminar fields
     if data.title is not None:
@@ -1877,15 +1888,18 @@ async def update_seminar_details_v1(
         room = db.exec(room_stmt).first()
         if room:
             seminar.room_id = room.id
+            logger.info(f"UPDATE DETAILS: Found existing room id={room.id}, name='{room.name}'")
         else:
             # Create new room
             new_room = Room(name=data.room, location="")
             db.add(new_room)
             db.flush()
             seminar.room_id = new_room.id
+            logger.info(f"UPDATE DETAILS: Created new room id={new_room.id}, name='{new_room.name}'")
     elif data.room is not None and data.room.strip() == '':
         # Clear the room if empty string is sent
         seminar.room_id = None
+        logger.info(f"UPDATE DETAILS: Clearing room_id")
     
     # Get or create details
     details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
