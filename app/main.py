@@ -162,94 +162,14 @@ class SeminarResponse(BaseModel):
     speaker: Optional[SpeakerResponse] = None
     room: Optional[str]  # Just the room name, not full object
     
-    @model_validator(mode='before')
+    @field_validator('room', mode='before')
     @classmethod
-    def extract_room_name_with_fallback(cls, data):
-        room_value = None
-        
-        # Handle SQLModel object (when from_attributes=True)
-        if hasattr(data, '__dict__') and hasattr(data, 'room_id'):
-            # It's a Seminar SQLModel instance
-            # If room relationship is loaded and exists
-            if hasattr(data, 'room') and data.room is not None:
-                try:
-                    room_value = data.room.name
-                except:
-                    pass
-            
-            # If no room found, try to get room from assigned_slot
-            if room_value is None and not data.room_id and hasattr(data, 'assigned_slot'):
-                try:
-                    slot = data.assigned_slot
-                    if slot:
-                        # Try slot's room first
-                        if slot.room:
-                            room_value = slot.room
-                        # Fall back to plan's default_room
-                        elif slot.plan and slot.plan.default_room:
-                            room_value = slot.plan.default_room
-                except:
-                    pass
-            
-            # Convert to dict and set room properly
-            # This ensures Pydantic sees the string value, not the Room object
-            result = {}
-            for key in cls.model_fields.keys():
-                if key == 'room':
-                    result[key] = room_value
-                elif key == 'speaker':
-                    # Handle speaker relationship
-                    if hasattr(data, 'speaker') and data.speaker is not None:
-                        try:
-                            s = data.speaker
-                            result[key] = {
-                                'id': s.id,
-                                'name': s.name,
-                                'email': getattr(s, 'email', None),
-                                'affiliation': getattr(s, 'affiliation', None),
-                                'website': getattr(s, 'website', None),
-                                'bio': getattr(s, 'bio', None),
-                                'notes': getattr(s, 'notes', None),
-                                'cv_path': getattr(s, 'cv_path', None),
-                                'photo_path': getattr(s, 'photo_path', None),
-                            }
-                        except:
-                            result[key] = None
-                    else:
-                        result[key] = None
-                else:
-                    result[key] = getattr(data, key, None)
-            return result
-        
-        # Handle dict (when data is already a dict)
-        elif isinstance(data, dict):
-            # If room is already a string, keep it
-            if isinstance(data.get('room'), str):
-                return data
-            
-            # If room is a Room object, extract name
-            room_obj = data.get('room')
-            if isinstance(room_obj, Room):
-                data['room'] = room_obj.name
-                return data
-            
-            # If no room_id, try to get room from assigned_slot
-            if not data.get('room_id') and 'assigned_slot' in data:
-                slot = data.get('assigned_slot')
-                if slot:
-                    if getattr(slot, 'room', None):
-                        data['room'] = slot.room
-                        return data
-                    plan = getattr(slot, 'plan', None)
-                    if plan and getattr(plan, 'default_room', None):
-                        data['room'] = plan.default_room
-                        return data
-            
-            # Default: set room to None
-            data['room'] = None
-            return data
-        
-        return data
+    def extract_room_name(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, Room):
+            return v.name
+        return str(v) if v else None
 
 # Semester Planning Pydantic Models
 class SemesterPlanCreate(BaseModel):
