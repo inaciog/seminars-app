@@ -2799,6 +2799,8 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
                         speaker_name = speaker.name
                 if speaker_name:
                     slot_data["assigned_speaker_name"] = speaker_name
+                if seminar.title:
+                    slot_data["assigned_seminar_title"] = seminar.title
 
                 # If no stored suggestion_id, try to find by matching
                 if not assigned_suggestion_id:

@@ -50,6 +50,7 @@ interface SeminarSlot {
   status: 'available' | 'reserved' | 'confirmed' | 'cancelled';
   assigned_seminar_id?: number;
   assigned_speaker_name?: string;
+  assigned_seminar_title?: string;
   assigned_suggestion_id?: number;
 }
 
@@ -691,9 +692,16 @@ function SlotCard({
             {slot.room}
           </div>
           {slot.assigned_seminar_id && (
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-800 mt-1">
-              <UserPlus className="w-3 h-3" />
-              {slot.assigned_speaker_name || 'Assigned'}
+            <div className="mt-1 space-y-0.5">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-800">
+                <UserPlus className="w-3 h-3 shrink-0" />
+                {slot.assigned_speaker_name || 'Assigned'}
+              </div>
+              {slot.assigned_seminar_title && (
+                <div className="text-xs text-gray-500 pl-5 line-clamp-1" title={slot.assigned_seminar_title}>
+                  {slot.assigned_seminar_title}
+                </div>
+              )}
             </div>
           )}
         </div>
