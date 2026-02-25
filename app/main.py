@@ -4331,6 +4331,266 @@ async def recover_from_mirror(
     return {"success": True, "recovered": recovered}
 
 
+@app.post("/api/admin/restore-database")
+async def restore_database(
+    file: UploadFile = File(...),
+    confirm: bool = False,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Restore database from uploaded SQLite backup file."""
+    require_admin(user)
+    
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Must set confirm=true to proceed with restore")
+    
+    import tempfile
+    import shutil
+    
+    # Save uploaded file to temp location
+    temp_dir = tempfile.mkdtemp()
+    temp_path = Path(temp_dir) / "backup.db"
+    
+    try:
+        with open(temp_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        
+        # Connect to backup and inspect
+        import sqlite3
+        backup_conn = sqlite3.connect(str(temp_path))
+        backup_cursor = backup_conn.cursor()
+        
+        # Check what's in the backup
+        tables = ['semester_plans', 'seminar_slots', 'speaker_suggestions', 'speakers', 'seminars', 'rooms']
+        backup_counts = {}
+        for table in tables:
+            try:
+                backup_cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                backup_counts[table] = backup_cursor.fetchone()[0]
+            except:
+                backup_counts[table] = 0
+        
+        # Get semester plan details from backup
+        backup_plans = []
+        try:
+            backup_cursor.execute("SELECT id, name, academic_year, semester, default_room, status FROM semester_plans")
+            for row in backup_cursor.fetchall():
+                backup_plans.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "academic_year": row[2],
+                    "semester": row[3],
+                    "default_room": row[4],
+                    "status": row[5]
+                })
+        except Exception as e:
+            return {"error": f"Failed to read semester_plans from backup: {e}", "backup_counts": backup_counts}
+        
+        # Get slots from backup
+        backup_slots = []
+        try:
+            backup_cursor.execute("SELECT id, semester_plan_id, date, start_time, end_time, room, status FROM seminar_slots")
+            for row in backup_cursor.fetchall():
+                backup_slots.append({
+                    "id": row[0],
+                    "semester_plan_id": row[1],
+                    "date": row[2],
+                    "start_time": row[3],
+                    "end_time": row[4],
+                    "room": row[5],
+                    "status": row[6]
+                })
+        except Exception as e:
+            return {"error": f"Failed to read seminar_slots from backup: {e}", "backup_counts": backup_counts}
+        
+        # Get suggestions from backup
+        backup_suggestions = []
+        try:
+            backup_cursor.execute("SELECT id, semester_plan_id, speaker_name, speaker_email, speaker_affiliation, suggested_topic, status FROM speaker_suggestions")
+            for row in backup_cursor.fetchall():
+                backup_suggestions.append({
+                    "id": row[0],
+                    "semester_plan_id": row[1],
+                    "speaker_name": row[2],
+                    "speaker_email": row[3],
+                    "speaker_affiliation": row[4],
+                    "suggested_topic": row[5],
+                    "status": row[6]
+                })
+        except Exception as e:
+            return {"error": f"Failed to read speaker_suggestions from backup: {e}", "backup_counts": backup_counts}
+        
+        backup_conn.close()
+        
+        # Now restore the data
+        restored = {"semester_plans": 0, "slots": 0, "suggestions": 0, "speakers": 0, "seminars": 0, "rooms": 0}
+        
+        # Restore semester plans
+        for plan_data in backup_plans:
+            # Check if plan already exists
+            stmt = select(SemesterPlan).where(SemesterPlan.name == plan_data["name"])
+            existing = db.exec(stmt).first()
+            if not existing:
+                plan = SemesterPlan(
+                    name=plan_data["name"],
+                    academic_year=plan_data["academic_year"],
+                    semester=plan_data["semester"],
+                    default_room=plan_data["default_room"],
+                    status=plan_data["status"]
+                )
+                db.add(plan)
+                db.flush()
+                restored["semester_plans"] += 1
+        
+        db.commit()
+        
+        # Build ID mapping for plans (backup_id -> new_id)
+        plan_id_map = {}
+        for plan_data in backup_plans:
+            stmt = select(SemesterPlan).where(SemesterPlan.name == plan_data["name"])
+            existing = db.exec(stmt).first()
+            if existing:
+                plan_id_map[plan_data["id"]] = existing.id
+        
+        # Restore slots
+        for slot_data in backup_slots:
+            new_plan_id = plan_id_map.get(slot_data["semester_plan_id"])
+            if new_plan_id:
+                # Check if slot already exists
+                stmt = select(SeminarSlot).where(
+                    SeminarSlot.semester_plan_id == new_plan_id,
+                    SeminarSlot.date == slot_data["date"]
+                )
+                existing = db.exec(stmt).first()
+                if not existing:
+                    slot = SeminarSlot(
+                        semester_plan_id=new_plan_id,
+                        date=slot_data["date"],
+                        start_time=slot_data["start_time"],
+                        end_time=slot_data["end_time"],
+                        room=slot_data["room"],
+                        status=slot_data["status"]
+                    )
+                    db.add(slot)
+                    restored["slots"] += 1
+        
+        db.commit()
+        
+        # Restore suggestions
+        for sugg_data in backup_suggestions:
+            new_plan_id = plan_id_map.get(sugg_data["semester_plan_id"])
+            if new_plan_id:
+                # Check if suggestion already exists
+                stmt = select(SpeakerSuggestion).where(
+                    SpeakerSuggestion.semester_plan_id == new_plan_id,
+                    SpeakerSuggestion.speaker_name == sugg_data["speaker_name"]
+                )
+                existing = db.exec(stmt).first()
+                if not existing:
+                    suggestion = SpeakerSuggestion(
+                        semester_plan_id=new_plan_id,
+                        suggested_by=user.get("id", "admin"),
+                        speaker_name=sugg_data["speaker_name"],
+                        speaker_email=sugg_data["speaker_email"],
+                        speaker_affiliation=sugg_data["speaker_affiliation"],
+                        suggested_topic=sugg_data["suggested_topic"],
+                        status=sugg_data["status"]
+                    )
+                    db.add(suggestion)
+                    restored["suggestions"] += 1
+        
+        db.commit()
+        
+        # Restore speakers and seminars from backup
+        backup_conn = sqlite3.connect(str(temp_path))
+        backup_cursor = backup_conn.cursor()
+        
+        # Restore speakers
+        try:
+            backup_cursor.execute("SELECT id, name, email, affiliation, website, bio, notes, cv_path, photo_path FROM speakers")
+            for row in backup_cursor.fetchall():
+                # Check if speaker exists by email
+                if row[2]:  # email
+                    stmt = select(Speaker).where(Speaker.email == row[2])
+                    existing = db.exec(stmt).first()
+                    if not existing:
+                        speaker = Speaker(
+                            name=row[1],
+                            email=row[2],
+                            affiliation=row[3],
+                            website=row[4],
+                            bio=row[5],
+                            notes=row[6],
+                            cv_path=row[7],
+                            photo_path=row[8]
+                        )
+                        db.add(speaker)
+                        restored["speakers"] += 1
+        except Exception as e:
+            print(f"Error restoring speakers: {e}")
+        
+        db.commit()
+        
+        # Restore seminars
+        try:
+            backup_cursor.execute("SELECT id, title, date, start_time, end_time, speaker_id, room_id, abstract, paper_title, status, room_booked, announcement_sent, calendar_invite_sent, website_updated, catering_ordered FROM seminars")
+            for row in backup_cursor.fetchall():
+                # Check if seminar exists
+                stmt = select(Seminar).where(
+                    Seminar.title == row[1],
+                    Seminar.date == row[2]
+                )
+                existing = db.exec(stmt).first()
+                if not existing:
+                    seminar = Seminar(
+                        title=row[1],
+                        date=row[2],
+                        start_time=row[3],
+                        end_time=row[4],
+                        speaker_id=row[5] or 1,
+                        room_id=row[6],
+                        abstract=row[7],
+                        paper_title=row[8],
+                        status=row[9],
+                        room_booked=row[10] or False,
+                        announcement_sent=row[11] or False,
+                        calendar_invite_sent=row[12] or False,
+                        website_updated=row[13] or False,
+                        catering_ordered=row[14] or False
+                    )
+                    db.add(seminar)
+                    restored["seminars"] += 1
+        except Exception as e:
+            print(f"Error restoring seminars: {e}")
+        
+        db.commit()
+        backup_conn.close()
+        
+        record_activity(
+            db=db,
+            event_type="DATABASE_RESTORE",
+            summary=f"Restored database from backup file: {restored}",
+            entity_type="system",
+            entity_id=0,
+            actor=user.get("id"),
+        )
+        
+        refresh_fallback_mirror(db)
+        
+        return {
+            "success": True,
+            "backup_counts": backup_counts,
+            "restored": restored,
+            "backup_plans_sample": backup_plans[:3],
+            "backup_slots_sample": backup_slots[:3],
+            "backup_suggestions_sample": backup_suggestions[:3]
+        }
+        
+    finally:
+        # Cleanup temp files
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 # ============================================================================
 # Health Check
 # ============================================================================
