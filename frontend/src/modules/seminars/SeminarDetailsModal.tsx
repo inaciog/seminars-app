@@ -143,6 +143,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
   const formValues = useRef<Record<string, string | boolean>>({
     title: '',
     abstract: '',
+    notes: '',
     check_in_date: '',
     check_out_date: '',
     passport_number: '',
@@ -206,6 +207,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
       formValues.current = {
         title: details.title || '',
         abstract: details.abstract || '',
+        notes: (details as any).notes || '',
         check_in_date: details.info?.check_in_date || '',
         check_out_date: details.info?.check_out_date || '',
         passport_number: details.info?.passport_number || '',
@@ -246,6 +248,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
     const payload = {
       title: formValues.current.title,
       abstract: formValues.current.abstract,
+      notes: formValues.current.notes,
       room: roomValue,
       check_in_date: formValues.current.check_in_date,
       check_out_date: formValues.current.check_out_date,
@@ -280,6 +283,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         ...old,
         title: formValues.current.title,
         abstract: formValues.current.abstract,
+        notes: formValues.current.notes,
         room: roomValue,
         info: {
           ...old?.info,
@@ -443,6 +447,15 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                         onChange={(val) => updateField('abstract', val)}
                         placeholder="Enter talk abstract"
                         rows={6}
+                      />
+                    </FormField>
+                    
+                    <FormField label="Internal Notes">
+                      <TextArea 
+                        value={v.notes as string} 
+                        onChange={(val) => updateField('notes', val)}
+                        placeholder="Internal management notes (not visible to speaker)"
+                        rows={4}
                       />
                     </FormField>
                   </div>

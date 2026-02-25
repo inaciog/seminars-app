@@ -140,6 +140,7 @@ class SeminarUpdate(BaseModel):
     calendar_invite_sent: Optional[bool] = None
     website_updated: Optional[bool] = None
     catering_ordered: Optional[bool] = None
+    notes: Optional[str] = None
 
 class SeminarResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -159,6 +160,7 @@ class SeminarResponse(BaseModel):
     calendar_invite_sent: bool
     website_updated: bool
     catering_ordered: bool
+    notes: Optional[str] = None
     speaker: Optional[SpeakerResponse] = None
     room: Optional[str]  # Just the room name, not full object
     

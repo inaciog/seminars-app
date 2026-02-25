@@ -61,6 +61,8 @@ class Seminar(SQLModel, table=True):
     website_updated: bool = Field(default=False)
     catering_ordered: bool = Field(default=False)
     
+    notes: Optional[str] = None  # Internal management notes
+    
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
