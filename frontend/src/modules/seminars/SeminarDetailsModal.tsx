@@ -17,6 +17,7 @@ interface SeminarDetails {
   title: string;
   abstract: string | null;
   room: string | null;
+  default_room: string | null;
   has_details: boolean;
   info: {
     id: number;
@@ -219,7 +220,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         estimated_hotel_cost: details.info?.estimated_hotel_cost?.toString() || '',
         ticket_purchase_info: details.info?.ticket_purchase_info || '',
       };
-      setRoomValue(details.room || '');
+      setRoomValue(details.room || details.default_room || '');
       setInitialized(true);
       forceUpdate({}); // Trigger one re-render to populate defaultValues
     }

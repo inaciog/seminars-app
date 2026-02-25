@@ -1775,6 +1775,19 @@ async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db),
         db.commit()
         db.refresh(details)
     
+    # Get room - use seminar's room, or fall back to semester plan's default_room
+    room_name = seminar.room.name if seminar.room else None
+    default_room = None
+    if not room_name:
+        # Find the slot this seminar is assigned to
+        slot_stmt = select(SeminarSlot).where(SeminarSlot.assigned_seminar_id == seminar_id)
+        slot = db.exec(slot_stmt).first()
+        if slot and slot.semester_plan_id:
+            plan = db.get(SemesterPlan, slot.semester_plan_id)
+            if plan:
+                default_room = plan.default_room
+                room_name = plan.default_room
+    
     return {
         "id": seminar.id,
         "title": seminar.title,
@@ -1788,7 +1801,8 @@ async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db),
             "email": seminar.speaker.email,
             "affiliation": seminar.speaker.affiliation,
         } if seminar.speaker else None,
-        "room": seminar.room.name if seminar.room else None,
+        "room": room_name,
+        "default_room": default_room,
         "status": seminar.status,
         "info": {
             "check_in_date": details.check_in_date.isoformat() if details.check_in_date else None,
