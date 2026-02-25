@@ -134,7 +134,7 @@ class SeminarSlot(SQLModel, table=True):
     assigned_suggestion_id: Optional[int] = Field(default=None, foreign_key="speaker_suggestions.id")
     
     plan: SemesterPlan = Relationship(back_populates="slots")
-    assigned_seminar: Optional[Seminar] = Relationship()
+    assigned_seminar: Optional[Seminar] = Relationship(sa_relationship_kwargs={"overlaps": "assigned_slot"})
 
 
 class SpeakerSuggestion(SQLModel, table=True):
