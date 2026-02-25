@@ -1871,7 +1871,7 @@ async def update_seminar_details_v1(
         seminar.title = data.title
     if data.abstract is not None:
         seminar.abstract = data.abstract
-    if data.room is not None:
+    if data.room is not None and data.room.strip() != '':
         # Find or create room by name
         room_stmt = select(Room).where(Room.name == data.room)
         room = db.exec(room_stmt).first()
@@ -1883,6 +1883,9 @@ async def update_seminar_details_v1(
             db.add(new_room)
             db.flush()
             seminar.room_id = new_room.id
+    elif data.room is not None and data.room.strip() == '':
+        # Clear the room if empty string is sent
+        seminar.room_id = None
     
     # Get or create details
     details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
@@ -1956,6 +1959,7 @@ async def update_seminar_details_v1(
         actor=user.get("id"),
     )
     db.commit()
+    db.refresh(seminar)
     db.refresh(details)
     refresh_fallback_mirror(db)
     
