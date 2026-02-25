@@ -1866,9 +1866,6 @@ async def update_seminar_details_v1(
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
     
-    room_before = seminar.room_id
-    room_after = room_before
-    
     # Update seminar fields
     if data.title is not None:
         seminar.title = data.title
@@ -1880,18 +1877,15 @@ async def update_seminar_details_v1(
         room = db.exec(room_stmt).first()
         if room:
             seminar.room_id = room.id
-            room_after = room.id
         else:
             # Create new room
             new_room = Room(name=data.room, location="")
             db.add(new_room)
             db.flush()
             seminar.room_id = new_room.id
-            room_after = new_room.id
     elif data.room is not None and data.room.strip() == '':
         # Clear the room if empty string is sent
         seminar.room_id = None
-        room_after = None
     
     # Get or create details
     details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
@@ -1969,17 +1963,7 @@ async def update_seminar_details_v1(
     db.refresh(details)
     refresh_fallback_mirror(db)
     
-    # Debug info to help diagnose room update issues
-    return {
-        "success": True, 
-        "message": "Details updated successfully",
-        "debug": {
-            "room_sent": data.room,
-            "room_before": room_before,
-            "room_after": room_after,
-            "seminar_room_id": seminar.room_id
-        }
-    }
+    return {"success": True, "message": "Details updated successfully"}
 
 # ============================================================================
 # API Routes - Semester Planning

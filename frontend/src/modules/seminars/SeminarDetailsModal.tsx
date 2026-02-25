@@ -170,7 +170,6 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
   
   // Reset initialized when seminarId changes (modal reopened with different seminar)
   useEffect(() => {
-    console.log('Reset effect running - seminarId:', seminarId);
     setInitialized(false);
     setRoomValue('');
   }, [seminarId]);
@@ -203,7 +202,6 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
 
   // Initialize form values from server data ONCE
   useEffect(() => {
-    console.log('Init effect - details:', !!details, 'initialized:', initialized);
     if (details && !initialized) {
       formValues.current = {
         title: details.title || '',
@@ -228,9 +226,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         estimated_hotel_cost: details.info?.estimated_hotel_cost?.toString() || '',
         ticket_purchase_info: details.info?.ticket_purchase_info || '',
       };
-      const initialRoom = details.room || details.default_room || '';
-      console.log('Initializing roomValue:', initialRoom, 'from details.room:', details.room, 'details.default_room:', details.default_room);
-      setRoomValue(initialRoom);
+      setRoomValue(details.room || details.default_room || '');
       setInitialized(true);
       forceUpdate({}); // Trigger one re-render to populate defaultValues
     }
@@ -247,7 +243,6 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
     e.preventDefault();
     setIsSaving(true);
     
-    console.log('Submitting - roomValue:', roomValue, 'initialized:', initialized);
     const payload = {
       title: formValues.current.title,
       abstract: formValues.current.abstract,
@@ -437,13 +432,9 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                     <FormField label="Room">
                       <TextInput 
                         value={roomValue} 
-                        onChange={(val) => {
-                          console.log('Room onChange:', val);
-                          setRoomValue(val);
-                        }}
+                        onChange={(val) => setRoomValue(val)}
                         placeholder="Enter room (e.g., E11-4047)"
                       />
-                      <div className="text-xs text-gray-400 mt-1">Debug: roomValue='{roomValue}'</div>
                     </FormField>
                     
                     <FormField label="Abstract">
