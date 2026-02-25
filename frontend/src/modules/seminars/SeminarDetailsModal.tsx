@@ -16,6 +16,7 @@ interface SeminarDetails {
   speaker_name: string | null;
   title: string;
   abstract: string | null;
+  room: string | null;
   has_details: boolean;
   info: {
     id: number;
@@ -415,6 +416,12 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                         onChange={(val) => updateField('title', val)}
                         placeholder="Enter talk title"
                       />
+                    </FormField>
+                    
+                    <FormField label="Room">
+                      <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700">
+                        {details?.room || 'Not assigned'}
+                      </div>
                     </FormField>
                     
                     <FormField label="Abstract">
