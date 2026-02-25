@@ -101,28 +101,36 @@ export function DatabaseAdmin() {
     },
   });
 
-  // Upload restore file mutation
-  const uploadRestoreMutation = useMutation({
+  // Direct restore mutation (upload + restore in one step)
+  const restoreMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
       
-      const response = await fetchWithAuth('/api/admin/db/restore/upload', {
+      const response = await fetchWithAuth('/api/admin/restore-database?confirm=true', {
         method: 'POST',
         body: formData,
       });
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || 'Upload failed');
+        throw new Error(error.detail || 'Restore failed');
       }
-      return response.json() as Promise<ConfirmationResponse>;
+      return response.json();
     },
     onSuccess: (data) => {
-      setConfirmationToken(data.token);
-      setConfirmationMessage(data.message);
+      setOperationSuccess({
+        message: `Database restored successfully!`,
+        details: data.restored
+      });
+      setActiveModal(null);
+      setRestoreFile(null);
+      queryClient.invalidateQueries({ queryKey: ['database-status'] });
+      queryClient.invalidateQueries({ queryKey: ['seminars'] });
+      queryClient.invalidateQueries({ queryKey: ['speakers'] });
+      queryClient.invalidateQueries({ queryKey: ['semester-plans'] });
     },
     onError: (error: Error) => {
-      alert(`Upload failed: ${error.message}`);
+      alert(`Restore failed: ${error.message}`);
     },
   });
 
@@ -157,40 +165,6 @@ export function DatabaseAdmin() {
     },
   });
 
-  // Confirm restore mutation
-  const confirmRestoreMutation = useMutation({
-    mutationFn: async ({ token, filename }: { token: string; filename: string }) => {
-      const response = await fetchWithAuth('/api/admin/db/restore/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          confirmation_token: token,
-          original_filename: filename 
-        }),
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Restore failed');
-      }
-      return response.json();
-    },
-    onSuccess: (data) => {
-      setOperationSuccess({
-        message: data.message,
-        details: { backup: data.pre_restore_backup }
-      });
-      setActiveModal(null);
-      setConfirmationToken(null);
-      setRestoreFile(null);
-      queryClient.invalidateQueries({ queryKey: ['database-status'] });
-      queryClient.invalidateQueries({ queryKey: ['seminars'] });
-      queryClient.invalidateQueries({ queryKey: ['speakers'] });
-      queryClient.invalidateQueries({ queryKey: ['semester-plans'] });
-    },
-    onError: (error: Error) => {
-      alert(`Restore failed: ${error.message}`);
-    },
-  });
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -229,7 +203,12 @@ export function DatabaseAdmin() {
         return;
       }
       setRestoreFile(file);
-      uploadRestoreMutation.mutate(file);
+    }
+  };
+
+  const handleRestore = () => {
+    if (restoreFile) {
+      restoreMutation.mutate(restoreFile);
     }
   };
 
@@ -248,11 +227,6 @@ export function DatabaseAdmin() {
       confirmResetMutation.mutate({ token: confirmationToken, synthetic: false });
     } else if (activeModal === 'reset-synthetic') {
       confirmResetMutation.mutate({ token: confirmationToken, synthetic: true });
-    } else if (activeModal === 'restore' && restoreFile) {
-      confirmRestoreMutation.mutate({ 
-        token: confirmationToken, 
-        filename: restoreFile.name 
-      });
     }
   };
 
@@ -448,67 +422,47 @@ export function DatabaseAdmin() {
               </button>
             </div>
 
-            {!confirmationToken ? (
-              <div className="space-y-4">
-                <p className="text-sm text-gray-600">
-                  Select a SQLite database file (.db) to restore. This will <strong>replace</strong> the current database.
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Select a SQLite database file (.db) to restore. This will restore speakers, seminars, semester plans, slots, and suggestions from your backup.
+              </p>
+              
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                <input
+                  type="file"
+                  accept=".db"
+                  onChange={handleFileUpload}
+                  disabled={restoreMutation.isPending}
+                  className="hidden"
+                  id="restore-file"
+                />
+                <label 
+                  htmlFor="restore-file"
+                  className="cursor-pointer flex flex-col items-center"
+                >
+                  <Upload className="w-8 h-8 text-gray-400 mb-2" />
+                  <span className="text-sm text-gray-600">
+                    {restoreFile ? `Selected: ${restoreFile.name}` : 'Click to select database file'}
+                  </span>
+                </label>
+              </div>
+
+              {restoreFile && (
+                <button
+                  onClick={handleRestore}
+                  disabled={restoreMutation.isPending}
+                  className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {restoreMutation.isPending ? 'Restoring...' : 'Restore Database'}
+                </button>
+              )}
+
+              {restoreMutation.isError && (
+                <p className="text-sm text-red-600">
+                  {(restoreMutation.error as Error).message}
                 </p>
-                
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                  <input
-                    type="file"
-                    accept=".db"
-                    onChange={handleFileUpload}
-                    disabled={uploadRestoreMutation.isPending}
-                    className="hidden"
-                    id="restore-file"
-                  />
-                  <label 
-                    htmlFor="restore-file"
-                    className="cursor-pointer flex flex-col items-center"
-                  >
-                    <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                    <span className="text-sm text-gray-600">
-                      {uploadRestoreMutation.isPending ? 'Uploading...' : 'Click to select database file'}
-                    </span>
-                  </label>
-                </div>
-
-                {uploadRestoreMutation.isError && (
-                  <p className="text-sm text-red-600">
-                    {(uploadRestoreMutation.error as Error).message}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-amber-900">Confirm Restore</p>
-                      <p className="text-sm text-amber-800 mt-1">{confirmationMessage}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={closeModal}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={executeOperation}
-                    disabled={confirmRestoreMutation.isPending}
-                    className="flex-1 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
-                  >
-                    {confirmRestoreMutation.isPending ? 'Restoring...' : 'Confirm Restore'}
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
