@@ -168,6 +168,12 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
   const [, forceUpdate] = useState({});
   const [roomValue, setRoomValue] = useState('');
   
+  // Reset initialized when seminarId changes (modal reopened with different seminar)
+  useEffect(() => {
+    setInitialized(false);
+    setRoomValue('');
+  }, [seminarId]);
+  
   const { data: details, isLoading } = useQuery({
     queryKey: ['seminar-details', seminarId],
     queryFn: async (): Promise<SeminarDetails> => {
