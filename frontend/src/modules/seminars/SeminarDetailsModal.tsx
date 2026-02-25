@@ -170,6 +170,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
   
   // Reset initialized when seminarId changes (modal reopened with different seminar)
   useEffect(() => {
+    console.log('Reset effect running - seminarId:', seminarId);
     setInitialized(false);
     setRoomValue('');
   }, [seminarId]);
@@ -202,6 +203,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
 
   // Initialize form values from server data ONCE
   useEffect(() => {
+    console.log('Init effect - details:', !!details, 'initialized:', initialized);
     if (details && !initialized) {
       formValues.current = {
         title: details.title || '',
@@ -245,7 +247,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
     e.preventDefault();
     setIsSaving(true);
     
-    console.log('Submitting - roomValue:', roomValue);
+    console.log('Submitting - roomValue:', roomValue, 'initialized:', initialized);
     const payload = {
       title: formValues.current.title,
       abstract: formValues.current.abstract,
