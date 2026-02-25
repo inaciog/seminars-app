@@ -4190,6 +4190,148 @@ async def send_email(request: SendEmailRequest, user: dict = Depends(get_current
 
 
 # ============================================================================
+# Recovery from Fallback Mirror
+# ============================================================================
+
+@app.post("/api/admin/recover-from-mirror")
+async def recover_from_mirror(
+    confirm: bool = False,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Recover seminar data from fallback mirror HTML file."""
+    require_admin(user)
+    
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Must set confirm=true to proceed with recovery")
+    
+    import re
+    from datetime import datetime
+    
+    mirror_path = Path("./fallback-mirror/recovery.html")
+    if not mirror_path.exists():
+        raise HTTPException(status_code=404, detail="Recovery file not found")
+    
+    with open(mirror_path, 'r') as f:
+        html = f.read()
+    
+    recovered = {"speakers": 0, "seminars": 0, "rooms": 0}
+    
+    # Parse speakers
+    speakers = []
+    speaker_pattern = r'<h3>([^<]+)</h3>\s*<p><strong>Affiliation:</strong> ([^|]+) \| <strong>Email:</strong> ([^<]+)</p>'
+    for match in re.finditer(speaker_pattern, html):
+        name = match.group(1).strip()
+        affiliation = match.group(2).strip()
+        email = match.group(3).strip()
+        speakers.append({
+            'name': name,
+            'affiliation': affiliation,
+            'email': email
+        })
+    
+    # Create speakers
+    speaker_map = {}
+    for s_data in speakers:
+        stmt = select(Speaker).where(Speaker.email == s_data['email'])
+        existing = db.exec(stmt).first()
+        if existing:
+            speaker_map[s_data['name']] = existing
+        else:
+            speaker = Speaker(**s_data)
+            db.add(speaker)
+            db.flush()
+            speaker_map[s_data['name']] = speaker
+            recovered["speakers"] += 1
+    
+    # Parse seminars
+    seminar_blocks = re.findall(r'<div class="seminar-block">(.*?)</div>\s*</div>', html, re.DOTALL)
+    
+    for block in seminar_blocks:
+        # Title
+        title_match = re.search(r'<h2>([^<]+)</h2>', block)
+        title = title_match.group(1) if title_match else 'Unknown'
+        
+        # Date, time, room, status
+        meta_match = re.search(r'<strong>Date:</strong> ([^|]+) \| <strong>Time:</strong> ([^|]+) \| <strong>Room:</strong> ([^|]+) \| <strong>Status:</strong> ([^<]+)</p>', block)
+        if not meta_match:
+            continue
+            
+        date_str = meta_match.group(1).strip()
+        time_range = meta_match.group(2).strip()
+        room_name = meta_match.group(3).strip()
+        status = meta_match.group(4).strip()
+        
+        # Speaker
+        speaker_match = re.search(r'<strong>Speaker:</strong> ([^<]+) <([^>]+)>', block)
+        speaker_name = speaker_match.group(1).strip() if speaker_match else 'Unknown'
+        
+        # Abstract
+        abstract_match = re.search(r'<h3>Abstract</h3><p>([^<]+)</p>', block)
+        abstract = abstract_match.group(1) if abstract_match else None
+        
+        # Parse time
+        time_parts = time_range.split('-')
+        start_time = time_parts[0].strip() if len(time_parts) > 0 else '14:00'
+        end_time = time_parts[1].strip() if len(time_parts) > 1 else '15:30'
+        
+        # Parse date
+        try:
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except:
+            continue
+        
+        # Create room if needed
+        room = None
+        if room_name and room_name != 'TBD':
+            stmt = select(Room).where(Room.name == room_name)
+            room = db.exec(stmt).first()
+            if not room:
+                room = Room(name=room_name, location="")
+                db.add(room)
+                db.flush()
+                recovered["rooms"] += 1
+        
+        # Get speaker
+        speaker = speaker_map.get(speaker_name)
+        
+        # Check if seminar already exists
+        stmt = select(Seminar).where(
+            Seminar.title == title,
+            Seminar.date == date_obj
+        )
+        existing = db.exec(stmt).first()
+        if not existing:
+            seminar = Seminar(
+                title=title,
+                date=date_obj,
+                start_time=start_time,
+                end_time=end_time,
+                speaker_id=speaker.id if speaker else None,
+                room_id=room.id if room else None,
+                abstract=abstract,
+                status=status
+            )
+            db.add(seminar)
+            recovered["seminars"] += 1
+    
+    db.commit()
+    
+    record_activity(
+        db=db,
+        event_type="DATA_RECOVERY",
+        summary=f"Recovered data from mirror: {recovered}",
+        entity_type="system",
+        entity_id=0,
+        actor=user.get("id"),
+    )
+    
+    refresh_fallback_mirror(db)
+    
+    return {"success": True, "recovered": recovered}
+
+
+# ============================================================================
 # Health Check
 # ============================================================================
 
