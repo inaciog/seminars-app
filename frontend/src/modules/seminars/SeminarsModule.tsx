@@ -804,61 +804,76 @@ function SeminarCard({
         </span>
       </div>
 
-      {/* Checklist */}
+      {/* Workflow Steps */}
       <div className="mt-4 pt-4 border-t border-gray-100">
-        <div className="flex flex-wrap gap-2">
-          <StatusBadge 
-            checked={seminar.room_booked} 
-            label="Room Booked"
-            onClick={() => onUpdateStatus({ room_booked: !seminar.room_booked })}
-          />
-          <StatusBadge 
-            checked={seminar.announcement_sent} 
-            label="Announcement"
-            onClick={() => onUpdateStatus({ announcement_sent: !seminar.announcement_sent })}
-          />
-          <StatusBadge 
-            checked={seminar.calendar_invite_sent} 
-            label="Calendar Invite"
-            onClick={() => onUpdateStatus({ calendar_invite_sent: !seminar.calendar_invite_sent })}
-          />
-          <StatusBadge 
-            checked={seminar.catering_ordered} 
-            label="Catering"
-            onClick={() => onUpdateStatus({ catering_ordered: !seminar.catering_ordered })}
-          />
-        </div>
+        <WorkflowSteps seminarId={seminar.id} speakerId={seminar.speaker_id} />
       </div>
     </div>
   );
 }
 
-function StatusBadge({ 
-  checked, 
-  label,
-  onClick 
-}: { 
-  checked: boolean; 
-  label: string;
-  onClick: () => void;
-}) {
+function WorkflowSteps({ seminarId, speakerId }: { seminarId: number; speakerId: number | null }) {
+  const { data: workflow } = useQuery({
+    queryKey: ['seminar-workflow', seminarId],
+    queryFn: async () => {
+      if (!speakerId) return null;
+      // Find the suggestion for this speaker and get workflow
+      const r = await fetchWithAuth(`/api/v1/seminars/speaker-suggestions?speaker_id=${speakerId}`);
+      if (!r.ok) return null;
+      const suggestions = await r.json();
+      if (!suggestions?.length) return null;
+      
+      // Get workflow for the first suggestion
+      const suggestion = suggestions[0];
+      const wfR = await fetchWithAuth(`/api/v1/seminars/speaker-suggestions/${suggestion.id}/workflow`);
+      if (!wfR.ok) return null;
+      return wfR.json();
+    },
+    enabled: !!speakerId,
+  });
+
+  // Determine current step
+  let currentStep = 1;
+  if (workflow) {
+    if (workflow.proposal_approved) currentStep = 4;
+    else if (workflow.proposal_submitted) currentStep = 3;
+    else if (workflow.availability_dates_received) currentStep = 2;
+  }
+
+  const steps = [
+    { num: 1, label: 'Availability', icon: Calendar },
+    { num: 2, label: 'Date Assigned', icon: CheckCircle },
+    { num: 3, label: 'Info Submitted', icon: FileText },
+    { num: 4, label: 'Approved', icon: CheckCircle },
+  ];
+
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors',
-        checked 
-          ? 'bg-green-100 text-green-700 hover:bg-green-200' 
-          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-      )}
-    >
-      {checked ? (
-        <CheckCircle className="w-4 h-4" />
-      ) : (
-        <XCircle className="w-4 h-4" />
-      )}
-      {label}
-    </button>
+    <div className="flex items-center gap-1">
+      {steps.map((step, idx) => {
+        const isCompleted = currentStep > step.num;
+        const isCurrent = currentStep === step.num;
+        const Icon = step.icon;
+        
+        return (
+          <div key={step.num} className="flex items-center">
+            <div
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium',
+                isCompleted && 'bg-green-100 text-green-700',
+                isCurrent && 'bg-blue-100 text-blue-700',
+                !isCompleted && !isCurrent && 'bg-gray-100 text-gray-500'
+              )}
+            >
+              <Icon className="w-3 h-3" />
+              {step.label}
+            </div>
+            {idx < steps.length - 1 && (
+              <div className={cn('w-4 h-px mx-1', isCompleted ? 'bg-green-300' : 'bg-gray-200')} />
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
