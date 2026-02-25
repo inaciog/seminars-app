@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from sqlmodel import Session, select
+from sqlalchemy.orm import selectinload
 
 # Import all models from models module
 from app.models import (
@@ -35,7 +36,7 @@ from app.models import (
 
 # Import core utilities
 from app.core import settings, get_engine, get_db, record_activity, verify_token, get_current_user, create_editor_token
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 # Import logging configuration
@@ -161,14 +162,68 @@ class SeminarResponse(BaseModel):
     speaker: Optional[SpeakerResponse] = None
     room: Optional[str]  # Just the room name, not full object
     
-    @field_validator('room', mode='before')
+    @model_validator(mode='before')
     @classmethod
-    def extract_room_name(cls, v):
-        if v is None:
-            return None
-        if isinstance(v, Room):
-            return v.name
-        return str(v)
+    def extract_room_name_with_fallback(cls, data):
+        room_value = None
+        
+        # Handle SQLModel object (when from_attributes=True)
+        if hasattr(data, '__dict__') and hasattr(data, 'room_id'):
+            # It's a Seminar SQLModel instance
+            # If room relationship is loaded and exists
+            if hasattr(data, 'room') and data.room is not None:
+                try:
+                    room_value = data.room.name
+                except:
+                    pass
+            
+            # If no room found, try to get room from assigned_slot
+            if room_value is None and not data.room_id and hasattr(data, 'assigned_slot'):
+                try:
+                    slot = data.assigned_slot
+                    if slot:
+                        # Try slot's room first
+                        if slot.room:
+                            room_value = slot.room
+                        # Fall back to plan's default_room
+                        elif slot.plan and slot.plan.default_room:
+                            room_value = slot.plan.default_room
+                except:
+                    pass
+            
+            # Update the object's __dict__ so from_attributes can pick up all fields
+            data.__dict__['room'] = room_value
+            return data
+        
+        # Handle dict (when data is already a dict)
+        elif isinstance(data, dict):
+            # If room is already a string, keep it
+            if isinstance(data.get('room'), str):
+                return data
+            
+            # If room is a Room object, extract name
+            room_obj = data.get('room')
+            if isinstance(room_obj, Room):
+                data['room'] = room_obj.name
+                return data
+            
+            # If no room_id, try to get room from assigned_slot
+            if not data.get('room_id') and 'assigned_slot' in data:
+                slot = data.get('assigned_slot')
+                if slot:
+                    if getattr(slot, 'room', None):
+                        data['room'] = slot.room
+                        return data
+                    plan = getattr(slot, 'plan', None)
+                    if plan and getattr(plan, 'default_room', None):
+                        data['room'] = plan.default_room
+                        return data
+            
+            # Default: set room to None
+            data['room'] = None
+            return data
+        
+        return data
 
 # Semester Planning Pydantic Models
 class SemesterPlanCreate(BaseModel):
@@ -969,7 +1024,11 @@ async def public_page(db: Session = Depends(get_db)):
         end_date = date_type(current_year, 12, 31)
     
     # Get all seminars for the current term, ordered by date
-    statement = select(Seminar).where(
+    statement = select(Seminar).options(
+        selectinload(Seminar.room),
+        selectinload(Seminar.speaker),
+        selectinload(Seminar.assigned_slot).selectinload(SeminarSlot.plan)
+    ).where(
         Seminar.date >= start_date,
         Seminar.date <= end_date
     ).order_by(Seminar.date)
@@ -983,8 +1042,18 @@ async def public_page(db: Session = Depends(get_db)):
         
         speaker_name = speaker.name if speaker else "TBD"
         affiliation = speaker.affiliation or "" if speaker else ""
-        room_name = room.name if room else "TBD"
-        room_location = room.location or "" if room else ""
+        
+        # Get room name with fallback to slot's room or plan's default_room
+        room_name = "TBD"
+        room_location = ""
+        if room:
+            room_name = room.name
+            room_location = room.location or ""
+        elif s.assigned_slot:
+            if s.assigned_slot.room:
+                room_name = s.assigned_slot.room
+            elif s.assigned_slot.plan and s.assigned_slot.plan.default_room:
+                room_name = s.assigned_slot.plan.default_room
         
         # Format date: "Mar 15" or "Mar 15-17" for multi-day
         date_str = s.date.strftime("%b %d")
@@ -1611,7 +1680,11 @@ async def list_seminars(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
-    statement = select(Seminar).order_by(Seminar.date)
+    statement = select(Seminar).options(
+        selectinload(Seminar.room),
+        selectinload(Seminar.speaker),
+        selectinload(Seminar.assigned_slot).selectinload(SeminarSlot.plan)
+    ).order_by(Seminar.date)
     
     if upcoming:
         today = date_type.today()
@@ -1688,7 +1761,11 @@ async def list_seminars_v1(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
-    statement = select(Seminar).order_by(Seminar.date)
+    statement = select(Seminar).options(
+        selectinload(Seminar.room),
+        selectinload(Seminar.speaker),
+        selectinload(Seminar.assigned_slot).selectinload(SeminarSlot.plan)
+    ).order_by(Seminar.date)
     
     if upcoming:
         today = date_type.today()
@@ -2839,6 +2916,21 @@ async def assign_speaker_to_slot(
             # Update suggestion with the new speaker_id
             suggestion.speaker_id = speaker_id
     
+    # Find or create Room from slot's room string
+    room_id = None
+    if slot.room:
+        room_stmt = select(Room).where(Room.name == slot.room)
+        existing_room = db.exec(room_stmt).first()
+        if existing_room:
+            room_id = existing_room.id
+        else:
+            # Create a new room from slot's room
+            new_room = Room(name=slot.room)
+            db.add(new_room)
+            db.commit()
+            db.refresh(new_room)
+            room_id = new_room.id
+    
     # Create a seminar from the suggestion
     seminar = Seminar(
         title=suggestion.suggested_topic or f"Seminar by {suggestion.speaker_name}",
@@ -2846,7 +2938,7 @@ async def assign_speaker_to_slot(
         start_time=slot.start_time,
         end_time=slot.end_time,
         speaker_id=speaker_id,
-        room_id=None,
+        room_id=room_id,
         status="planned"
     )
     db.add(seminar)

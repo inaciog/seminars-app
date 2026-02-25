@@ -786,7 +786,7 @@ function SeminarCard({
             <span>{formatTime(seminar.start_time)} - {formatTime(seminar.end_time)}</span>
             <span className="flex items-center gap-1">
               <MapPin className="w-4 h-4" />
-              {seminar.room}
+              {seminar.room || 'TBD'}
             </span>
           </div>
         </div>

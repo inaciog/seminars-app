@@ -67,6 +67,7 @@ class Seminar(SQLModel, table=True):
     speaker: Speaker = Relationship(back_populates="seminars")
     room: Optional[Room] = Relationship(back_populates="seminars")
     files: List["UploadedFile"] = Relationship(back_populates="seminar")
+    assigned_slot: Optional["SeminarSlot"] = Relationship(sa_relationship_kwargs={"primaryjoin": "Seminar.id == SeminarSlot.assigned_seminar_id", "remote_side": "SeminarSlot.assigned_seminar_id", "uselist": False})
 
 
 class AvailabilitySlot(SQLModel, table=True):

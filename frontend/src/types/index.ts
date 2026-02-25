@@ -54,7 +54,7 @@ export interface Seminar {
   date: string;
   start_time: string;
   end_time: string;
-  room: string;
+  room?: string;
   building?: string;
   speaker_id?: number;
   speaker?: Speaker;
