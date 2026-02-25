@@ -191,9 +191,35 @@ class SeminarResponse(BaseModel):
                 except:
                     pass
             
-            # Update the object's __dict__ so from_attributes can pick up all fields
-            data.__dict__['room'] = room_value
-            return data
+            # Convert to dict and set room properly
+            # This ensures Pydantic sees the string value, not the Room object
+            result = {}
+            for key in cls.model_fields.keys():
+                if key == 'room':
+                    result[key] = room_value
+                elif key == 'speaker':
+                    # Handle speaker relationship
+                    if hasattr(data, 'speaker') and data.speaker is not None:
+                        try:
+                            s = data.speaker
+                            result[key] = {
+                                'id': s.id,
+                                'name': s.name,
+                                'email': getattr(s, 'email', None),
+                                'affiliation': getattr(s, 'affiliation', None),
+                                'website': getattr(s, 'website', None),
+                                'bio': getattr(s, 'bio', None),
+                                'notes': getattr(s, 'notes', None),
+                                'cv_path': getattr(s, 'cv_path', None),
+                                'photo_path': getattr(s, 'photo_path', None),
+                            }
+                        except:
+                            result[key] = None
+                    else:
+                        result[key] = None
+                else:
+                    result[key] = getattr(data, key, None)
+            return result
         
         # Handle dict (when data is already a dict)
         elif isinstance(data, dict):
