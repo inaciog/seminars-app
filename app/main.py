@@ -1784,7 +1784,11 @@ async def delete_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user
 @app.get("/api/v1/seminars/seminars/{seminar_id}/details")
 async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get seminar with details."""
-    seminar = db.get(Seminar, seminar_id)
+    statement = select(Seminar).options(
+        selectinload(Seminar.room),
+        selectinload(Seminar.speaker)
+    ).where(Seminar.id == seminar_id)
+    seminar = db.exec(statement).first()
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
     
