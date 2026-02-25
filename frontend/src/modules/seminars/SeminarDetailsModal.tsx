@@ -316,7 +316,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
     } finally {
       setIsSaving(false);
     }
-  }, [seminarId, queryClient]);
+  }, [seminarId, queryClient, roomValue]);
 
   // File upload handler
   const handleFileUpload = async (file: File, fileType: 'cv' | 'photo' | 'passport' | 'flight' | 'other') => {
