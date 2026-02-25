@@ -2776,7 +2776,11 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         }
         # If slot has an assigned seminar, get the speaker name and seminar room
         if s.assigned_seminar_id:
-            seminar_stmt = select(Seminar).options(selectinload(Seminar.room)).where(Seminar.id == s.assigned_seminar_id)
+            seminar_stmt = (
+                select(Seminar)
+                .options(selectinload(Seminar.room), selectinload(Seminar.speaker))
+                .where(Seminar.id == s.assigned_seminar_id)
+            )
             seminar = db.exec(seminar_stmt).first()
             if seminar:
                 assigned_suggestion_id = s.assigned_suggestion_id  # Use stored value first
@@ -2785,16 +2789,16 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
                 if seminar.room:
                     slot_data["room"] = seminar.room.name
                 
-                # Access speaker through the relationship
-                try:
-                    speaker_name = seminar.speaker.name if seminar.speaker else None
-                    if speaker_name:
-                        slot_data["assigned_speaker_name"] = speaker_name
-                except Exception:
-                    # If speaker relationship isn't loaded, query it directly
+                # Get speaker name — eagerly loaded via selectinload, fall back to direct query
+                speaker_name = None
+                if seminar.speaker:
+                    speaker_name = seminar.speaker.name
+                elif seminar.speaker_id:
                     speaker = db.get(Speaker, seminar.speaker_id)
                     if speaker:
-                        slot_data["assigned_speaker_name"] = speaker.name
+                        speaker_name = speaker.name
+                if speaker_name:
+                    slot_data["assigned_speaker_name"] = speaker_name
 
                 # If no stored suggestion_id, try to find by matching
                 if not assigned_suggestion_id:
@@ -2822,6 +2826,12 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
         slots_response.append(slot_data)
     
     return {
+        "plan": {
+            "id": plan.id,
+            "name": plan.name,
+            "default_room": plan.default_room,
+            "status": plan.status,
+        },
         "slots": slots_response,
         "suggestions": [
             {
@@ -2835,7 +2845,7 @@ async def get_planning_board(plan_id: int, db: Session = Depends(get_db), user: 
                 "suggested_topic": s.suggested_topic,
                 "priority": s.priority,
                 "status": s.status,
-                "availability": [{"date": a.date.isoformat(), "preference": a.preference} for a in s.availability]
+                "availability": [{"id": a.id, "date": a.date.isoformat(), "preference": a.preference} for a in s.availability]
             }
             for s in suggestions
         ]

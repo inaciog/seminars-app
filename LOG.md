@@ -1,3 +1,24 @@
+# Changelog
+
+## 2025 — Planning Board Speaker Name Fix
+
+### Issue
+The semester planning board's list of dates was not showing the speaker names for slots that had been assigned a speaker.
+
+### Root Cause
+Two bugs in `get_planning_board` (`app/main.py`):
+1. The seminar query used `selectinload(Seminar.room)` but NOT `selectinload(Seminar.speaker)`. The speaker relationship relied on lazy loading wrapped in a bare `try/except`, which could silently skip the speaker name if any issue occurred.
+2. The API response never included the `plan` object, even though the frontend expected `boardData.plan.name` for the board header.
+3. The `availability` list for suggestions was missing the `id` field.
+
+### Fix
+- Changed seminar query to eagerly load both room and speaker: `.options(selectinload(Seminar.room), selectinload(Seminar.speaker))`
+- Cleaned up the speaker-name resolution to a simple `if seminar.speaker / elif seminar.speaker_id` fallback (no bare try/except swallowing errors)
+- Added `plan` object to the planning-board response
+- Added `id` to each availability item in the suggestions list
+
+---
+
 # Database Restore Function Schema Mismatch Fix
 
 ## Issue
