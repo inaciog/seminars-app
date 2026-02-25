@@ -542,6 +542,79 @@ async def upload_restore_file(
     )
 
 
+def _get_backup_schema(backup_conn: sqlite3.Connection) -> Dict[str, list]:
+    """Get the list of columns for each table in the backup database."""
+    cursor = backup_conn.cursor()
+    schema = {}
+    
+    try:
+        # Get all tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+        
+        for (table_name,) in tables:
+            # Get columns for each table
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = cursor.fetchall()
+            schema[table_name] = [col[1] for col in columns]  # col[1] is column name
+    except Exception as e:
+        logger.error(f"Could not determine backup schema: {e}")
+    
+    return schema
+
+
+def _migrate_backup_schema(db_path: Path, backup_schema: Dict[str, list]) -> bool:
+    """
+    Migrate backup database schema to match current schema.
+    Adds missing columns with appropriate defaults.
+    """
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        
+        # Define expected schema with column definitions
+        expected_columns = {
+            'seminars': {
+                'notes': 'TEXT',
+                'created_at': 'DATETIME DEFAULT CURRENT_TIMESTAMP',
+                'updated_at': 'DATETIME DEFAULT CURRENT_TIMESTAMP'
+            },
+            'speakers': {
+                'created_at': 'DATETIME DEFAULT CURRENT_TIMESTAMP'
+            },
+            'semester_plans': {
+                'created_at': 'DATETIME DEFAULT CURRENT_TIMESTAMP'
+            }
+        }
+        
+        # For each table, check for missing columns and add them
+        for table_name, expected_cols in expected_columns.items():
+            if table_name not in backup_schema:
+                logger.warning(f"Table {table_name} not found in backup")
+                continue
+            
+            existing_cols = backup_schema[table_name]
+            
+            for col_name, col_def in expected_cols.items():
+                if col_name not in existing_cols:
+                    # Column is missing, add it with default value
+                    try:
+                        alter_sql = f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}"
+                        cursor.execute(alter_sql)
+                        logger.info(f"Added missing column {table_name}.{col_name}")
+                    except sqlite3.OperationalError as e:
+                        if "duplicate column name" not in str(e).lower():
+                            logger.error(f"Failed to add column {table_name}.{col_name}: {e}")
+                        # If column already exists, continue
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"Schema migration failed: {e}")
+        return False
+
+
 @router.post("/restore/confirm")
 async def confirm_restore(
     request: RestoreRequest,
@@ -579,19 +652,32 @@ async def confirm_restore(
             source.close()
             dest.close()
         
-        # 2. Close all connections
+        # 2. Analyze backup schema before restoring
+        logger.info("Analyzing backup database schema...")
+        backup_conn = sqlite3.connect(str(temp_path))
+        backup_schema = _get_backup_schema(backup_conn)
+        backup_conn.close()
+        logger.info(f"Backup schema detected: {backup_schema}")
+        
+        # 3. Close all connections
         with _close_all_connections():
-            # 3. Replace database file atomically
+            # 4. Replace database file atomically
             if db_path.exists():
                 # On Windows, we need to remove first; on Unix, rename is atomic
                 db_path.unlink()
             
             shutil.move(str(temp_path), str(db_path))
+            
+            # 5. Migrate schema if needed
+            logger.info("Migrating backup schema to current schema...")
+            migration_success = _migrate_backup_schema(db_path, backup_schema)
+            if not migration_success:
+                logger.warning("Schema migration completed with warnings")
         
-        # 4. Mark token as used
+        # 6. Mark token as used
         _mark_token_used(request.confirmation_token)
         
-        # 5. Log the restore (note: we're logging to the NEW database now)
+        # 7. Log the restore (note: we're logging to the NEW database now)
         try:
             with Session(get_engine()) as db:
                 record_activity(
@@ -601,7 +687,8 @@ async def confirm_restore(
                     actor=user.get('id', 'unknown'),
                     details={
                         "original_filename": request.original_filename,
-                        "pre_restore_backup": str(backup_before_restore.name) if backup_before_restore else None
+                        "pre_restore_backup": str(backup_before_restore.name) if backup_before_restore else None,
+                        "backup_schema": str(backup_schema)
                     }
                 )
                 db.commit()
@@ -611,7 +698,8 @@ async def confirm_restore(
         return {
             "success": True,
             "message": "Database restored successfully",
-            "pre_restore_backup": backup_before_restore.name if backup_before_restore else None
+            "pre_restore_backup": backup_before_restore.name if backup_before_restore else None,
+            "backup_schema": backup_schema
         }
     
     except Exception as e:

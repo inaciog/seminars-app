@@ -4507,63 +4507,118 @@ async def restore_database(
         backup_conn = sqlite3.connect(str(temp_path))
         backup_cursor = backup_conn.cursor()
         
-        # Restore speakers
+        # Restore speakers with dynamic column detection
         try:
-            backup_cursor.execute("SELECT id, name, email, affiliation, website, bio, notes, cv_path, photo_path FROM speakers")
+            # Get available columns in backup speakers table
+            backup_cursor.execute("PRAGMA table_info(speakers)")
+            speaker_cols_available = {row[1]: row[0] for row in backup_cursor.fetchall()}  # {col_name: col_index}
+            
+            # List of columns to try to restore
+            speaker_columns = ['id', 'name', 'email', 'affiliation', 'website', 'bio', 'notes', 'cv_path', 'photo_path']
+            cols_to_select = [col for col in speaker_columns if col in speaker_cols_available]
+            select_sql = f"SELECT {', '.join(cols_to_select)} FROM speakers"
+            
+            logger.info(f"Restoring speakers with columns: {cols_to_select}")
+            
+            backup_cursor.execute(select_sql)
             for row in backup_cursor.fetchall():
+                # Dynamic mapping: build a dict of column_name -> value
+                row_dict = {cols_to_select[i]: row[i] for i in range(len(row))}
+                
                 # Check if speaker exists by email
-                if row[2]:  # email
-                    stmt = select(Speaker).where(Speaker.email == row[2])
+                if row_dict.get('email'):
+                    stmt = select(Speaker).where(Speaker.email == row_dict.get('email'))
                     existing = db.exec(stmt).first()
                     if not existing:
                         speaker = Speaker(
-                            name=row[1],
-                            email=row[2],
-                            affiliation=row[3],
-                            website=row[4],
-                            bio=row[5],
-                            notes=row[6],
-                            cv_path=row[7],
-                            photo_path=row[8]
+                            name=row_dict.get('name'),
+                            email=row_dict.get('email'),
+                            affiliation=row_dict.get('affiliation'),
+                            website=row_dict.get('website'),
+                            bio=row_dict.get('bio'),
+                            notes=row_dict.get('notes'),
+                            cv_path=row_dict.get('cv_path'),
+                            photo_path=row_dict.get('photo_path')
                         )
                         db.add(speaker)
                         restored["speakers"] += 1
         except Exception as e:
-            print(f"Error restoring speakers: {e}")
+            logger.error(f"Error restoring speakers: {e}")
+            import traceback
+            traceback.print_exc()
         
         db.commit()
         
-        # Restore seminars
+        # Restore seminars with dynamic column detection
         try:
-            backup_cursor.execute("SELECT id, title, date, start_time, end_time, speaker_id, room_id, abstract, paper_title, status, room_booked, announcement_sent, calendar_invite_sent, website_updated, catering_ordered FROM seminars")
+            # Get available columns in backup seminars table
+            backup_cursor.execute("PRAGMA table_info(seminars)")
+            available_cols = {row[1]: row[0] for row in backup_cursor.fetchall()}  # {col_name: col_index}
+            
+            # List of columns to try to restore, in preferred order
+            seminar_columns = [
+                'id', 'title', 'date', 'start_time', 'end_time', 'speaker_id', 'room_id',
+                'abstract', 'paper_title', 'status', 'room_booked', 'announcement_sent',
+                'calendar_invite_sent', 'website_updated', 'catering_ordered', 'notes'
+            ]
+            
+            # Filter to only available columns
+            cols_to_select = [col for col in seminar_columns if col in available_cols]
+            select_sql = f"SELECT {', '.join(cols_to_select)} FROM seminars"
+            
+            logger.info(f"Restoring seminars with columns: {cols_to_select}")
+            
+            backup_cursor.execute(select_sql)
             for row in backup_cursor.fetchall():
+                # Dynamic mapping: build a dict of column_name -> value
+                row_dict = {cols_to_select[i]: row[i] for i in range(len(row))}
+                
                 # Check if seminar exists
                 stmt = select(Seminar).where(
-                    Seminar.title == row[1],
-                    Seminar.date == row[2]
+                    Seminar.title == row_dict.get('title'),
+                    Seminar.date == row_dict.get('date')
                 )
                 existing = db.exec(stmt).first()
                 if not existing:
+                    # Parse date if it's a string
+                    date_val = row_dict.get('date')
+                    if date_val and isinstance(date_val, str):
+                        try:
+                            from datetime import datetime as dt
+                            date_val = dt.strptime(date_val, '%Y-%m-%d').date()
+                        except:
+                            try:
+                                # Try ISO format
+                                date_val = dt.fromisoformat(date_val).date()
+                            except:
+                                logger.warning(f"Could not parse date: {date_val}")
+                                continue
+                    
+                    # Create seminar with available data
                     seminar = Seminar(
-                        title=row[1],
-                        date=row[2],
-                        start_time=row[3],
-                        end_time=row[4],
-                        speaker_id=row[5] or 1,
-                        room_id=row[6],
-                        abstract=row[7],
-                        paper_title=row[8],
-                        status=row[9],
-                        room_booked=row[10] or False,
-                        announcement_sent=row[11] or False,
-                        calendar_invite_sent=row[12] or False,
-                        website_updated=row[13] or False,
-                        catering_ordered=row[14] or False
+                        title=row_dict.get('title'),
+                        date=date_val,
+                        start_time=row_dict.get('start_time', '14:00'),
+                        end_time=row_dict.get('end_time'),
+                        speaker_id=row_dict.get('speaker_id') or 1,
+                        room_id=row_dict.get('room_id'),
+                        abstract=row_dict.get('abstract'),
+                        paper_title=row_dict.get('paper_title'),
+                        status=row_dict.get('status', 'planned'),
+                        room_booked=row_dict.get('room_booked', False) or False,
+                        announcement_sent=row_dict.get('announcement_sent', False) or False,
+                        calendar_invite_sent=row_dict.get('calendar_invite_sent', False) or False,
+                        website_updated=row_dict.get('website_updated', False) or False,
+                        catering_ordered=row_dict.get('catering_ordered', False) or False,
+                        notes=row_dict.get('notes')
                     )
                     db.add(seminar)
                     restored["seminars"] += 1
         except Exception as e:
-            print(f"Error restoring seminars: {e}")
+            logger.error(f"Error restoring seminars: {e}")
+            import traceback
+            traceback.print_exc()
+
         
         db.commit()
         backup_conn.close()
