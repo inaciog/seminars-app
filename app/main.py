@@ -4444,7 +4444,12 @@ async def restore_database(
                 db.flush()
                 restored["semester_plans"] += 1
         
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"Error committing semester plans: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to commit semester plans: {str(e)}")
         
         # Build ID mapping for plans (backup_id -> new_id)
         plan_id_map = {}
@@ -4455,19 +4460,39 @@ async def restore_database(
                 plan_id_map[plan_data["id"]] = existing.id
         
         # Restore slots
+        from datetime import date as _date_type, datetime as _dt
+        
+        def _parse_date(val):
+            """Convert string from SQLite backup to Python date object."""
+            if val is None:
+                return None
+            if isinstance(val, _date_type):
+                return val
+            try:
+                return _dt.strptime(str(val), '%Y-%m-%d').date()
+            except ValueError:
+                try:
+                    return _dt.fromisoformat(str(val)).date()
+                except Exception:
+                    return None
+        
         for slot_data in backup_slots:
             new_plan_id = plan_id_map.get(slot_data["semester_plan_id"])
             if new_plan_id:
+                slot_date = _parse_date(slot_data["date"])
+                if not slot_date:
+                    logger.warning(f"Skipping slot with unparseable date: {slot_data['date']}")
+                    continue
                 # Check if slot already exists
                 stmt = select(SeminarSlot).where(
                     SeminarSlot.semester_plan_id == new_plan_id,
-                    SeminarSlot.date == slot_data["date"]
+                    SeminarSlot.date == slot_date
                 )
                 existing = db.exec(stmt).first()
                 if not existing:
                     slot = SeminarSlot(
                         semester_plan_id=new_plan_id,
-                        date=slot_data["date"],
+                        date=slot_date,
                         start_time=slot_data["start_time"],
                         end_time=slot_data["end_time"],
                         room=slot_data["room"],
@@ -4476,7 +4501,12 @@ async def restore_database(
                     db.add(slot)
                     restored["slots"] += 1
         
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"Error committing slots: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to commit slots: {str(e)}")
         
         # Restore suggestions
         for sugg_data in backup_suggestions:
@@ -4501,7 +4531,12 @@ async def restore_database(
                     db.add(suggestion)
                     restored["suggestions"] += 1
         
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"Error committing suggestions: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to commit suggestions: {str(e)}")
         
         # Restore speakers and seminars from backup
         backup_conn = sqlite3.connect(str(temp_path))
@@ -4547,7 +4582,12 @@ async def restore_database(
             import traceback
             traceback.print_exc()
         
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"Error committing speakers: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to commit speakers: {str(e)}")
         
         # Restore seminars with dynamic column detection
         try:
@@ -4573,26 +4613,19 @@ async def restore_database(
                 # Dynamic mapping: build a dict of column_name -> value
                 row_dict = {cols_to_select[i]: row[i] for i in range(len(row))}
                 
-                # Check if seminar exists
+                # Parse date first (required before WHERE clause comparison and INSERT)
+                date_val = _parse_date(row_dict.get('date'))
+                if not date_val:
+                    logger.warning(f"Skipping seminar with unparseable date: {row_dict.get('date')}")
+                    continue
+                
+                # Check if seminar exists (use parsed date object for comparison)
                 stmt = select(Seminar).where(
                     Seminar.title == row_dict.get('title'),
-                    Seminar.date == row_dict.get('date')
+                    Seminar.date == date_val
                 )
                 existing = db.exec(stmt).first()
                 if not existing:
-                    # Parse date if it's a string
-                    date_val = row_dict.get('date')
-                    if date_val and isinstance(date_val, str):
-                        try:
-                            from datetime import datetime as dt
-                            date_val = dt.strptime(date_val, '%Y-%m-%d').date()
-                        except:
-                            try:
-                                # Try ISO format
-                                date_val = dt.fromisoformat(date_val).date()
-                            except:
-                                logger.warning(f"Could not parse date: {date_val}")
-                                continue
                     
                     # Create seminar with available data
                     seminar = Seminar(
@@ -4618,21 +4651,32 @@ async def restore_database(
             logger.error(f"Error restoring seminars: {e}")
             import traceback
             traceback.print_exc()
-
         
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"Error committing seminars: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to commit seminars: {str(e)}")
+        
         backup_conn.close()
         
-        record_activity(
-            db=db,
-            event_type="DATABASE_RESTORE",
-            summary=f"Restored database from backup file: {restored}",
-            entity_type="system",
-            entity_id=0,
-            actor=user.get("id"),
-        )
+        try:
+            record_activity(
+                db=db,
+                event_type="DATABASE_RESTORE",
+                summary=f"Restored database from backup file: {restored}",
+                entity_type="system",
+                entity_id=0,
+                actor=user.get("id"),
+            )
+        except Exception as e:
+            logger.warning(f"Could not log restore activity: {e}")
         
-        refresh_fallback_mirror(db)
+        try:
+            refresh_fallback_mirror(db)
+        except Exception as e:
+            logger.warning(f"Could not refresh fallback mirror: {e}")
         
         return {
             "success": True,
