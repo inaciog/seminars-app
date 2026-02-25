@@ -4333,15 +4333,17 @@ async def recover_from_mirror(
 
 @app.post("/api/admin/restore-database")
 async def restore_database(
+    request: Request,
     file: UploadFile = File(...),
-    confirm: bool = False,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
     """Restore database from uploaded SQLite backup file."""
     require_admin(user)
     
-    if not confirm:
+    # Get confirm from query params
+    confirm = request.query_params.get('confirm', 'false')
+    if confirm.lower() != "true":
         raise HTTPException(status_code=400, detail="Must set confirm=true to proceed with restore")
     
     import tempfile
