@@ -1784,9 +1784,6 @@ async def delete_seminar_v1(seminar_id: int, db: Session = Depends(get_db), user
 @app.get("/api/v1/seminars/seminars/{seminar_id}/details")
 async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get seminar with details."""
-    import logging
-    logger = logging.getLogger(__name__)
-    
     statement = select(Seminar).options(
         selectinload(Seminar.room),
         selectinload(Seminar.speaker)
@@ -1868,9 +1865,6 @@ async def update_seminar_details_v1(
     user: dict = Depends(get_current_user)
 ):
     """Update seminar details."""
-    import logging
-    logger = logging.getLogger(__name__)
-    
     seminar = db.get(Seminar, seminar_id)
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
