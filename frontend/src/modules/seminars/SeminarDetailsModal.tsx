@@ -226,7 +226,9 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         estimated_hotel_cost: details.info?.estimated_hotel_cost?.toString() || '',
         ticket_purchase_info: details.info?.ticket_purchase_info || '',
       };
-      setRoomValue(details.room || details.default_room || '');
+      const initialRoom = details.room || details.default_room || '';
+      console.log('Initializing roomValue:', initialRoom, 'from details.room:', details.room, 'details.default_room:', details.default_room);
+      setRoomValue(initialRoom);
       setInitialized(true);
       forceUpdate({}); // Trigger one re-render to populate defaultValues
     }
@@ -243,6 +245,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
     e.preventDefault();
     setIsSaving(true);
     
+    console.log('Submitting - roomValue:', roomValue);
     const payload = {
       title: formValues.current.title,
       abstract: formValues.current.abstract,
@@ -432,9 +435,13 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                     <FormField label="Room">
                       <TextInput 
                         value={roomValue} 
-                        onChange={(val) => setRoomValue(val)}
+                        onChange={(val) => {
+                          console.log('Room onChange:', val);
+                          setRoomValue(val);
+                        }}
                         placeholder="Enter room (e.g., E11-4047)"
                       />
+                      <div className="text-xs text-gray-400 mt-1">Debug: roomValue='{roomValue}'</div>
                     </FormField>
                     
                     <FormField label="Abstract">
