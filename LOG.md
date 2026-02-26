@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026 — Speaker Status Page (Approved State) Simplification
+
+### Change
+When proposal status is approved on the external speaker status page, it now shows a single green approval box only.
+
+### Details
+- The approved box states that the proposal is approved and that travel tickets can be purchased.
+- The same approved box now includes the content from `ticket_purchase_info` (Ticket Purchase Instructions) from seminar details when provided.
+- Removed the duplicate second approved green box.
+
+---
+
 ## 2026 — Replace Success Popups with Inline Status
 
 ### Change

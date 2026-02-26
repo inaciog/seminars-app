@@ -8,6 +8,7 @@ authentication service (inacio-auth.fly.dev).
 import os
 import json
 import subprocess
+from html import escape as html_escape
 from urllib.parse import quote
 import uuid
 import shutil
@@ -3703,6 +3704,14 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
     
     # Build action links based on current step
     action_links_html = ""
+
+    # Ticket purchase info (only used in step 4 approved view)
+    ticket_purchase_info = None
+    try:
+        if seminar_details:
+            ticket_purchase_info = getattr(seminar_details, 'ticket_purchase_info', None)
+    except Exception:
+        pass  # Column might not exist yet
     
     if status_payload['step'] == 1:
         if availability_token:
@@ -3744,34 +3753,27 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
         </div>
         """
     elif status_payload['step'] == 4:
-        action_links_html = """
+        ticket_instructions_html = ""
+        if ticket_purchase_info and str(ticket_purchase_info).strip():
+            ticket_instructions_html = f"""
+            <div class='ticket-info'>{html_escape(str(ticket_purchase_info))}</div>
+            """
+
+        action_links_html = f"""
         <div class='action-section approved'>
             <h3>✅ Proposal Approved</h3>
             <p>Your proposal has been approved! You can now purchase your travel tickets.</p>
+            {ticket_instructions_html}
         </div>
         """
-    
-    # Ticket purchase info (only when approved)
+
+    # Keep separate ticket info section only for non-approved flow
     ticket_info_html = ""
-    ticket_purchase_info = None
-    try:
-        if seminar_details:
-            ticket_purchase_info = getattr(seminar_details, 'ticket_purchase_info', None)
-    except Exception:
-        pass  # Column might not exist yet
-    
-    if status_payload['step'] == 4 and ticket_purchase_info:
+    if status_payload['step'] != 4 and ticket_purchase_info and str(ticket_purchase_info).strip():
         ticket_info_html = f"""
-        <div class='info-section approved'>
-            <h3>✅ Travel Ticket Purchase Information</h3>
-            <div class='ticket-info'>{ticket_purchase_info}</div>
-        </div>
-        """
-    elif status_payload['step'] == 4:
-        ticket_info_html = """
-        <div class='info-section approved'>
-            <h3>✅ Proposal Approved</h3>
-            <p>You can now purchase your travel tickets. Contact the organizers for specific instructions on where to buy your tickets.</p>
+        <div class='info-section'>
+            <h3>🎫 Ticket Purchase Instructions</h3>
+            <div class='ticket-info'>{html_escape(str(ticket_purchase_info))}</div>
         </div>
         """
     
