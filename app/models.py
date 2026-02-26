@@ -209,8 +209,13 @@ class SeminarDetails(SQLModel, table=True):
     
     # Payment info
     payment_email: Optional[str] = None
+    contact_number: Optional[str] = None
     beneficiary_name: Optional[str] = None
     bank_account_number: Optional[str] = None
+    bank_region: Optional[str] = None  # europe, usa, australia, elsewhere
+    iban: Optional[str] = None
+    aba_routing_number: Optional[str] = None
+    bsb_number: Optional[str] = None
     bank_name: Optional[str] = None
     bank_address: Optional[str] = None
     swift_code: Optional[str] = None

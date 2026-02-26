@@ -148,8 +148,13 @@ export function SeminarViewPage({ seminarId, seminarTitle, onClose }: SeminarVie
         <Section title="Payment" icon={CreditCard}>
           <div className="space-y-1">
             <InfoRow label="Payment Email" value={info?.payment_email} />
+            <InfoRow label="Contact Number" value={info?.contact_number} />
             <InfoRow label="Beneficiary Name" value={info?.beneficiary_name} />
             <InfoRow label="Bank Name" value={info?.bank_name} />
+            <InfoRow label="Bank Region" value={info?.bank_region} />
+            <InfoRow label="IBAN" value={info?.iban} />
+            <InfoRow label="ABA Routing Number" value={info?.aba_routing_number} />
+            <InfoRow label="BSB Number" value={info?.bsb_number} />
             <InfoRow label="Bank Account" value={info?.bank_account_number} />
             <InfoRow label="SWIFT Code" value={info?.swift_code} />
             <InfoRow label="Currency" value={info?.currency} />

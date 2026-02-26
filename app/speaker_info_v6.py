@@ -553,16 +553,47 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                             <label class="form-label">Payment Email</label>
                             <input type="email" id="paymentEmail" class="form-input" placeholder="email@example.com">
                         </div>
-                        
+
                         <div class="form-group">
-                            <label class="form-label">Beneficiary Name</label>
-                            <input type="text" id="beneficiaryName" class="form-input" placeholder="Full name as on bank account">
+                            <label class="form-label">Contact Number</label>
+                            <input type="text" id="contactNumber" class="form-input" placeholder="+1 555 123 4567">
                         </div>
+                    </div>
+                        
+                    <div class="form-group">
+                        <label class="form-label">Beneficiary Name</label>
+                        <input type="text" id="beneficiaryName" class="form-input" placeholder="Full name as on bank account">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Bank Region</label>
+                        <select id="bankRegion" class="form-select" onchange="updateBankFieldsVisibility()">
+                            <option value="europe">Europe</option>
+                            <option value="usa">USA</option>
+                            <option value="australia">Australia</option>
+                            <option value="elsewhere" selected>Elsewhere</option>
+                        </select>
+                        <div class="form-hint">Europe: SWIFT + IBAN · USA: ABA + SWIFT · Australia: BSB + SWIFT · Elsewhere: SWIFT</div>
+                    </div>
+
+                    <div id="ibanField" class="form-group" style="display:none;">
+                        <label class="form-label">IBAN</label>
+                        <input type="text" id="iban" class="form-input" placeholder="IBAN">
+                    </div>
+
+                    <div id="abaField" class="form-group" style="display:none;">
+                        <label class="form-label">ABA Routing Number</label>
+                        <input type="text" id="abaRoutingNumber" class="form-input" placeholder="9-digit ABA routing number">
+                    </div>
+
+                    <div id="bsbField" class="form-group" style="display:none;">
+                        <label class="form-label">BSB Number</label>
+                        <input type="text" id="bsbNumber" class="form-input" placeholder="BSB number">
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">Bank Account Number</label>
-                        <input type="text" id="bankAccount" class="form-input" placeholder="Account/IBAN number">
+                        <label class="form-label">Bank Account Number (Optional)</label>
+                        <input type="text" id="bankAccount" class="form-input" placeholder="Optional legacy/additional account number">
                     </div>
                     
                     <div class="form-group">
@@ -714,6 +745,7 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
             loadFiles();
             setupAutoSave();
             setupEventListeners();
+            updateBankFieldsVisibility();
         }});
         
         // ==================== DATA LOADING & SAVING ====================
@@ -750,13 +782,19 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
             if (data.check_in_date) document.getElementById('checkInDate').value = data.check_in_date;
             if (data.check_out_date) document.getElementById('checkOutDate').value = data.check_out_date;
             if (data.payment_email) document.getElementById('paymentEmail').value = data.payment_email;
+            if (data.contact_number) document.getElementById('contactNumber').value = data.contact_number;
             if (data.beneficiary_name) document.getElementById('beneficiaryName').value = data.beneficiary_name;
+            if (data.bank_region) document.getElementById('bankRegion').value = data.bank_region;
+            if (data.iban) document.getElementById('iban').value = data.iban;
+            if (data.aba_routing_number) document.getElementById('abaRoutingNumber').value = data.aba_routing_number;
+            if (data.bsb_number) document.getElementById('bsbNumber').value = data.bsb_number;
             if (data.bank_name) document.getElementById('bankName').value = data.bank_name;
             if (data.bank_address) document.getElementById('bankAddress').value = data.bank_address;
             if (data.swift_code) document.getElementById('swiftCode').value = data.swift_code;
             if (data.bank_account_number) document.getElementById('bankAccount').value = data.bank_account_number;
             if (data.currency) document.getElementById('currency').value = data.currency;
             if (data.beneficiary_address) document.getElementById('beneficiaryAddress').value = data.beneficiary_address;
+            updateBankFieldsVisibility();
             calculateNights();
         }}
         
@@ -781,6 +819,18 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                 document.getElementById('accommodationFields').style.display = this.checked ? 'block' : 'none';
                 saveToServer();
             }});
+
+            document.getElementById('bankRegion').addEventListener('change', function() {{
+                updateBankFieldsVisibility();
+                saveToServer();
+            }});
+        }}
+
+        function updateBankFieldsVisibility() {{
+            const region = document.getElementById('bankRegion').value || 'elsewhere';
+            document.getElementById('ibanField').style.display = region === 'europe' ? 'block' : 'none';
+            document.getElementById('abaField').style.display = region === 'usa' ? 'block' : 'none';
+            document.getElementById('bsbField').style.display = region === 'australia' ? 'block' : 'none';
         }}
         
         function calculateNights() {{
@@ -854,7 +904,12 @@ def get_speaker_info_page_v6(speaker_name, speaker_email, speaker_affiliation, s
                     return nights != null ? String(nights) : null;
                 }})(),
                 payment_email: document.getElementById('paymentEmail').value,
+                contact_number: document.getElementById('contactNumber').value,
                 beneficiary_name: document.getElementById('beneficiaryName').value,
+                bank_region: document.getElementById('bankRegion').value,
+                iban: document.getElementById('iban').value,
+                aba_routing_number: document.getElementById('abaRoutingNumber').value,
+                bsb_number: document.getElementById('bsbNumber').value,
                 bank_name: document.getElementById('bankName').value,
                 bank_address: document.getElementById('bankAddress').value,
                 swift_code: document.getElementById('swiftCode').value,

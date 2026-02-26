@@ -295,7 +295,12 @@ class SpeakerInfoSubmit(BaseModel):
     accommodation_nights: Optional[str] = None  # From form; parsed to int in handler
     estimated_hotel_cost: Optional[str] = None  # From form; parsed to float in handler
     payment_email: Optional[str] = None
+    contact_number: Optional[str] = None
     beneficiary_name: Optional[str] = None
+    bank_region: Optional[str] = None
+    iban: Optional[str] = None
+    aba_routing_number: Optional[str] = None
+    bsb_number: Optional[str] = None
     bank_name: Optional[str] = None
     swift_code: Optional[str] = None
     bank_account_number: Optional[str] = None
@@ -316,8 +321,13 @@ class SeminarDetailsUpdate(BaseModel):
     passport_number: Optional[str] = None
     passport_country: Optional[str] = None
     payment_email: Optional[str] = None
+    contact_number: Optional[str] = None
     beneficiary_name: Optional[str] = None
     bank_account_number: Optional[str] = None
+    bank_region: Optional[str] = None
+    iban: Optional[str] = None
+    aba_routing_number: Optional[str] = None
+    bsb_number: Optional[str] = None
     bank_name: Optional[str] = None
     bank_address: Optional[str] = None
     swift_code: Optional[str] = None
@@ -350,8 +360,13 @@ class SeminarDetailsResponse(BaseModel):
     passport_number: Optional[str]
     passport_country: Optional[str]
     payment_email: Optional[str]
+    contact_number: Optional[str]
     beneficiary_name: Optional[str]
     bank_account_number: Optional[str]
+    bank_region: Optional[str]
+    iban: Optional[str]
+    aba_routing_number: Optional[str]
+    bsb_number: Optional[str]
     bank_name: Optional[str]
     bank_address: Optional[str]
     swift_code: Optional[str]
@@ -780,6 +795,25 @@ async def run_data_migration(engine):
                 logger.info("seminar_slots.assigned_suggestion_id already exists")
             else:
                 logger.error(f"Error adding assigned_suggestion_id: {e}")
+
+        # Add payment-related fields to seminar_details if not exists
+        seminar_details_columns = [
+            ("contact_number", "TEXT"),
+            ("bank_region", "TEXT"),
+            ("iban", "TEXT"),
+            ("aba_routing_number", "TEXT"),
+            ("bsb_number", "TEXT"),
+        ]
+        for col_name, col_type in seminar_details_columns:
+            try:
+                conn.execute(text(f"ALTER TABLE seminar_details ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+                logger.info(f"Added seminar_details.{col_name} column")
+            except Exception as e:
+                if "duplicate column name" in str(e):
+                    logger.info(f"seminar_details.{col_name} already exists")
+                else:
+                    logger.error(f"Error adding seminar_details.{col_name}: {e}")
         
         # Migrate data: update seminars with slot_id from seminar_slots
         try:
@@ -1839,8 +1873,13 @@ async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db),
             "passport_number": details.passport_number,
             "passport_country": details.passport_country,
             "payment_email": details.payment_email,
+            "contact_number": getattr(details, 'contact_number', None),
             "beneficiary_name": details.beneficiary_name,
             "bank_account_number": details.bank_account_number,
+            "bank_region": getattr(details, 'bank_region', None),
+            "iban": getattr(details, 'iban', None),
+            "aba_routing_number": getattr(details, 'aba_routing_number', None),
+            "bsb_number": getattr(details, 'bsb_number', None),
             "bank_name": details.bank_name,
             "bank_address": details.bank_address,
             "swift_code": details.swift_code,
@@ -1908,10 +1947,20 @@ async def update_seminar_details_v1(
         details.passport_country = data.passport_country
     if data.payment_email is not None:
         details.payment_email = data.payment_email
+    if data.contact_number is not None:
+        details.contact_number = data.contact_number
     if data.beneficiary_name is not None:
         details.beneficiary_name = data.beneficiary_name
     if data.bank_account_number is not None:
         details.bank_account_number = data.bank_account_number
+    if data.bank_region is not None:
+        details.bank_region = data.bank_region
+    if data.iban is not None:
+        details.iban = data.iban
+    if data.aba_routing_number is not None:
+        details.aba_routing_number = data.aba_routing_number
+    if data.bsb_number is not None:
+        details.bsb_number = data.bsb_number
     if data.bank_name is not None:
         details.bank_name = data.bank_name
     if data.bank_address is not None:
@@ -2596,8 +2645,18 @@ async def submit_speaker_info(
             pass
     if data.payment_email is not None:
         details.payment_email = data.payment_email
+    if data.contact_number is not None:
+        details.contact_number = data.contact_number
     if data.beneficiary_name is not None:
         details.beneficiary_name = data.beneficiary_name
+    if data.bank_region is not None:
+        details.bank_region = data.bank_region
+    if data.iban is not None:
+        details.iban = data.iban
+    if data.aba_routing_number is not None:
+        details.aba_routing_number = data.aba_routing_number
+    if data.bsb_number is not None:
+        details.bsb_number = data.bsb_number
     if data.bank_name is not None:
         details.bank_name = data.bank_name
     if data.swift_code is not None:
@@ -2716,7 +2775,12 @@ async def get_speaker_info_by_token(token: str, db: Session = Depends(get_db)):
         "accommodation_nights": details.accommodation_nights if details else None,
         "estimated_hotel_cost": details.estimated_hotel_cost if details else None,
         "payment_email": details.payment_email if details else None,
+        "contact_number": getattr(details, 'contact_number', None) if details else None,
         "beneficiary_name": details.beneficiary_name if details else None,
+        "bank_region": getattr(details, 'bank_region', None) if details else None,
+        "iban": getattr(details, 'iban', None) if details else None,
+        "aba_routing_number": getattr(details, 'aba_routing_number', None) if details else None,
+        "bsb_number": getattr(details, 'bsb_number', None) if details else None,
         "bank_name": details.bank_name if details else None,
         "swift_code": details.swift_code if details else None,
         "bank_account_number": details.bank_account_number if details else None,

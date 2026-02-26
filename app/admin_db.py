@@ -584,6 +584,14 @@ def _migrate_backup_schema(db_path: Path, backup_schema: Dict[str, list]) -> boo
             },
             'semester_plans': {
                 'created_at': 'DATETIME DEFAULT CURRENT_TIMESTAMP'
+            },
+            'seminar_details': {
+                'ticket_purchase_info': 'TEXT',
+                'contact_number': 'TEXT',
+                'bank_region': 'TEXT',
+                'iban': 'TEXT',
+                'aba_routing_number': 'TEXT',
+                'bsb_number': 'TEXT'
             }
         }
         

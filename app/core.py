@@ -11,6 +11,7 @@ from typing import Optional
 from pathlib import Path
 
 from sqlmodel import create_engine, Session
+from sqlalchemy import text
 from pydantic_settings import BaseSettings
 
 # Initialize logging first
@@ -50,6 +51,29 @@ settings = Settings()
 _engine = None
 
 
+def _ensure_seminar_details_columns(engine) -> None:
+    """Add missing seminar_details columns for backward-compatible schema upgrades."""
+    columns = [
+        ("ticket_purchase_info", "TEXT"),
+        ("contact_number", "TEXT"),
+        ("bank_region", "TEXT"),
+        ("iban", "TEXT"),
+        ("aba_routing_number", "TEXT"),
+        ("bsb_number", "TEXT"),
+    ]
+
+    with engine.connect() as conn:
+        for col_name, col_type in columns:
+            try:
+                conn.execute(text(f"ALTER TABLE seminar_details ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+            except Exception as e:
+                msg = str(e).lower()
+                if "duplicate column name" in msg or "no such table" in msg:
+                    continue
+                logger.warning(f"Could not ensure seminar_details.{col_name}: {e}")
+
+
 def get_engine():
     """Get or create the database engine."""
     global _engine
@@ -60,6 +84,7 @@ def get_engine():
         else:
             url = f"sqlite:///{db_url}"
         _engine = create_engine(url, connect_args={"check_same_thread": False})
+        _ensure_seminar_details_columns(_engine)
     return _engine
 
 

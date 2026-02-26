@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026 — Payment Details Expansion (Internal + External Forms)
+
+### Requested Change
+Add payment-section fields and region-specific bank requirements:
+- Contact Number
+- Europe: SWIFT + IBAN
+- USA: ABA Routing Number + SWIFT
+- Australia: BSB Number + SWIFT
+- Elsewhere: SWIFT
+
+### What Was Updated
+- Extended `SeminarDetails` schema with:
+    - `contact_number`
+    - `bank_region`
+    - `iban`
+    - `aba_routing_number`
+    - `bsb_number`
+- Updated API request/response models and handlers for:
+    - Internal seminar details edit/view endpoints
+    - External speaker token info read/submit endpoints
+- Updated internal UI (`SeminarDetailsModal`, `SeminarViewPage`) to capture and display the new fields.
+- Updated external speaker form (`speaker_info_v6`) with dynamic bank-field visibility by region and autosave payload support.
+
+### Backward Compatibility / Restore Safety
+- Added schema compatibility migrations for old databases to create missing `seminar_details` columns automatically.
+- Included new `seminar_details` columns in two-step restore schema migration (`admin_db`).
+- Existing/old backups remain restorable (missing new columns are added with `ALTER TABLE`).
+
+---
+
 ## 2026 — Restore Slot Assignment Relinking Fix
 
 ### Issue

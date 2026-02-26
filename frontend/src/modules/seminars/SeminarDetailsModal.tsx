@@ -28,8 +28,13 @@ interface SeminarDetails {
     passport_number: string | null;
     passport_country: string | null;
     payment_email: string | null;
+    contact_number: string | null;
     beneficiary_name: string | null;
     bank_account_number: string | null;
+    bank_region: string | null;
+    iban: string | null;
+    aba_routing_number: string | null;
+    bsb_number: string | null;
     bank_name: string | null;
     bank_address: string | null;
     swift_code: string | null;
@@ -149,8 +154,13 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
     passport_number: '',
     passport_country: '',
     payment_email: '',
+    contact_number: '',
     beneficiary_name: '',
     bank_account_number: '',
+    bank_region: 'elsewhere',
+    iban: '',
+    aba_routing_number: '',
+    bsb_number: '',
     bank_name: '',
     bank_address: '',
     swift_code: '',
@@ -213,8 +223,13 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         passport_number: details.info?.passport_number || '',
         passport_country: details.info?.passport_country || '',
         payment_email: details.info?.payment_email || '',
+        contact_number: details.info?.contact_number || '',
         beneficiary_name: details.info?.beneficiary_name || '',
         bank_account_number: details.info?.bank_account_number || '',
+        bank_region: details.info?.bank_region || 'elsewhere',
+        iban: details.info?.iban || '',
+        aba_routing_number: details.info?.aba_routing_number || '',
+        bsb_number: details.info?.bsb_number || '',
         bank_name: details.info?.bank_name || '',
         bank_address: details.info?.bank_address || '',
         swift_code: details.info?.swift_code || '',
@@ -255,8 +270,13 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
       passport_number: formValues.current.passport_number,
       passport_country: formValues.current.passport_country,
       payment_email: formValues.current.payment_email,
+      contact_number: formValues.current.contact_number,
       beneficiary_name: formValues.current.beneficiary_name,
       bank_account_number: formValues.current.bank_account_number,
+      bank_region: formValues.current.bank_region,
+      iban: formValues.current.iban,
+      aba_routing_number: formValues.current.aba_routing_number,
+      bsb_number: formValues.current.bsb_number,
       bank_name: formValues.current.bank_name,
       bank_address: formValues.current.bank_address,
       swift_code: formValues.current.swift_code,
@@ -292,8 +312,13 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
           passport_number: formValues.current.passport_number,
           passport_country: formValues.current.passport_country,
           payment_email: formValues.current.payment_email,
+          contact_number: formValues.current.contact_number,
           beneficiary_name: formValues.current.beneficiary_name,
           bank_account_number: formValues.current.bank_account_number,
+          bank_region: formValues.current.bank_region,
+          iban: formValues.current.iban,
+          aba_routing_number: formValues.current.aba_routing_number,
+          bsb_number: formValues.current.bsb_number,
           bank_name: formValues.current.bank_name,
           bank_address: formValues.current.bank_address,
           swift_code: formValues.current.swift_code,
@@ -599,6 +624,9 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
             {activeTab === 'payment' && (
               <div className="space-y-6">
                 <FormSection title="Payment Information">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                    Europe: SWIFT + IBAN. USA: ABA Routing Number + SWIFT. Australia: BSB Number + SWIFT. Elsewhere: SWIFT.
+                  </div>
                   <div className="grid grid-cols-1 gap-4">
                     <FormField label="Payment Email">
                       <TextInput 
@@ -606,6 +634,14 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                         value={v.payment_email as string} 
                         onChange={(val) => updateField('payment_email', val)}
                         placeholder="email@example.com"
+                      />
+                    </FormField>
+
+                    <FormField label="Contact Number">
+                      <TextInput
+                        value={v.contact_number as string}
+                        onChange={(val) => updateField('contact_number', val)}
+                        placeholder="+1 555 123 4567"
                       />
                     </FormField>
                     
@@ -621,9 +657,51 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
                       <TextInput 
                         value={v.bank_account_number as string} 
                         onChange={(val) => updateField('bank_account_number', val)}
-                        placeholder="Account/IBAN number"
+                        placeholder="Optional legacy/additional account number"
                       />
                     </FormField>
+
+                    <FormField label="Bank Region">
+                      <Select
+                        value={(v.bank_region as string) || 'elsewhere'}
+                        onChange={(val) => updateField('bank_region', val)}
+                      >
+                        <option value="europe">Europe</option>
+                        <option value="usa">USA</option>
+                        <option value="australia">Australia</option>
+                        <option value="elsewhere">Elsewhere</option>
+                      </Select>
+                    </FormField>
+
+                    {(v.bank_region as string) === 'europe' && (
+                      <FormField label="IBAN">
+                        <TextInput
+                          value={v.iban as string}
+                          onChange={(val) => updateField('iban', val)}
+                          placeholder="IBAN"
+                        />
+                      </FormField>
+                    )}
+
+                    {(v.bank_region as string) === 'usa' && (
+                      <FormField label="ABA Routing Number">
+                        <TextInput
+                          value={v.aba_routing_number as string}
+                          onChange={(val) => updateField('aba_routing_number', val)}
+                          placeholder="9-digit ABA routing number"
+                        />
+                      </FormField>
+                    )}
+
+                    {(v.bank_region as string) === 'australia' && (
+                      <FormField label="BSB Number">
+                        <TextInput
+                          value={v.bsb_number as string}
+                          onChange={(val) => updateField('bsb_number', val)}
+                          placeholder="BSB number"
+                        />
+                      </FormField>
+                    )}
                     
                     <FormField label="Bank Name">
                       <TextInput 
