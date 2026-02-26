@@ -1388,17 +1388,14 @@ async def speaker_availability_page(token: str, db: Session = Depends(get_db)):
     suggestion = db_token.suggestion
     plan = db.get(SemesterPlan, suggestion.semester_plan_id) if suggestion.semester_plan_id else None
     
-    # Get available slot dates for this plan and derive calendar range from them
+    # Get slot dates for this plan (all slots) and derive calendar range from them
     semester_start = None
     semester_end = None
     allowed_slot_dates: List[str] = []
     if plan:
         slots = db.exec(
             select(SeminarSlot)
-            .where(
-                SeminarSlot.semester_plan_id == plan.id,
-                SeminarSlot.status == "available"
-            )
+            .where(SeminarSlot.semester_plan_id == plan.id)
             .order_by(SeminarSlot.date)
         ).all()
 
@@ -1408,16 +1405,6 @@ async def speaker_availability_page(token: str, db: Session = Depends(get_db)):
             dates = [slot.date for slot in slots]
             semester_start = min(dates).isoformat()
             semester_end = max(dates).isoformat()
-        else:
-            all_slots = db.exec(
-                select(SeminarSlot)
-                .where(SeminarSlot.semester_plan_id == plan.id)
-                .order_by(SeminarSlot.date)
-            ).all()
-            if all_slots:
-                dates = [slot.date for slot in all_slots]
-                semester_start = min(dates).isoformat()
-                semester_end = max(dates).isoformat()
     
     return HTMLResponse(content=get_availability_page_html(
         speaker_name=suggestion.speaker_name,
@@ -2533,8 +2520,7 @@ async def submit_speaker_availability(
         if suggestion.semester_plan_id:
             allowed_slots = db.exec(
                 select(SeminarSlot).where(
-                    SeminarSlot.semester_plan_id == suggestion.semester_plan_id,
-                    SeminarSlot.status == "available"
+                    SeminarSlot.semester_plan_id == suggestion.semester_plan_id
                 )
             ).all()
             allowed_dates = {slot.date.isoformat() for slot in allowed_slots}
@@ -2548,7 +2534,7 @@ async def submit_speaker_availability(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Availability dates must match available slot dates in the semester plan. "
+                    "Availability dates must match slot dates in the semester plan. "
                     f"Invalid dates: {', '.join(invalid_dates[:5])}"
                 )
             )
@@ -2615,8 +2601,7 @@ async def get_speaker_availability_by_token(token: str, db: Session = Depends(ge
     if suggestion.semester_plan_id:
         allowed_slots = db.exec(
             select(SeminarSlot).where(
-                SeminarSlot.semester_plan_id == suggestion.semester_plan_id,
-                SeminarSlot.status == "available"
+                SeminarSlot.semester_plan_id == suggestion.semester_plan_id
             )
         ).all()
         allowed_slot_dates = [slot.date.isoformat() for slot in allowed_slots]

@@ -1,15 +1,15 @@
 # Changelog
 
-## 2026 — Speaker Availability Limited to Open Slot Dates
+## 2026 — Speaker Availability Limited to Semester Plan Slot Dates
 
 ### Issue
-External speaker availability form allowed selecting any date within the semester range, including dates that were not actual available seminar slots.
+External speaker availability form allowed selecting any date within the semester range, including dates that were not actual seminar slot dates in the plan.
 
 ### Fix
-- Updated availability page generation to pass explicit `allowed_slot_dates` from the semester plan (only slots with status `available`).
+- Updated availability page generation to pass explicit `allowed_slot_dates` from the semester plan (all slot dates in the plan).
 - Calendar UI now enables selection only for those allowed dates; all other dates are disabled.
 - Shift-range selection also respects allowed dates.
-- Added server-side validation in `submit-availability` to reject dates outside available plan slots.
+- Added server-side validation in `submit-availability` to reject dates outside plan slot dates.
 - Included `allowed_slot_dates` in token availability API response for consistency.
 
 ### Safety
