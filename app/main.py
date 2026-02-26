@@ -1388,16 +1388,36 @@ async def speaker_availability_page(token: str, db: Session = Depends(get_db)):
     suggestion = db_token.suggestion
     plan = db.get(SemesterPlan, suggestion.semester_plan_id) if suggestion.semester_plan_id else None
     
-    # Get semester date range
+    # Get available slot dates for this plan and derive calendar range from them
     semester_start = None
     semester_end = None
+    allowed_slot_dates: List[str] = []
     if plan:
-        # Get all slots for this plan to determine date range
-        slots = db.exec(select(SeminarSlot).where(SeminarSlot.semester_plan_id == plan.id)).all()
+        slots = db.exec(
+            select(SeminarSlot)
+            .where(
+                SeminarSlot.semester_plan_id == plan.id,
+                SeminarSlot.status == "available"
+            )
+            .order_by(SeminarSlot.date)
+        ).all()
+
+        allowed_slot_dates = [slot.date.isoformat() for slot in slots]
+
         if slots:
             dates = [slot.date for slot in slots]
             semester_start = min(dates).isoformat()
             semester_end = max(dates).isoformat()
+        else:
+            all_slots = db.exec(
+                select(SeminarSlot)
+                .where(SeminarSlot.semester_plan_id == plan.id)
+                .order_by(SeminarSlot.date)
+            ).all()
+            if all_slots:
+                dates = [slot.date for slot in all_slots]
+                semester_start = min(dates).isoformat()
+                semester_end = max(dates).isoformat()
     
     return HTMLResponse(content=get_availability_page_html(
         speaker_name=suggestion.speaker_name,
@@ -1407,7 +1427,8 @@ async def speaker_availability_page(token: str, db: Session = Depends(get_db)):
         semester_plan=plan.name if plan else None,
         token=token,
         semester_start=semester_start,
-        semester_end=semester_end
+        semester_end=semester_end,
+        allowed_slot_dates=allowed_slot_dates,
     ))
 
 @app.get("/speaker/info/{token}", response_class=HTMLResponse)
@@ -2508,6 +2529,30 @@ async def submit_speaker_availability(
     # Replace existing availability: delete old entries, add new ones
     suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
     if suggestion:
+        allowed_dates = set()
+        if suggestion.semester_plan_id:
+            allowed_slots = db.exec(
+                select(SeminarSlot).where(
+                    SeminarSlot.semester_plan_id == suggestion.semester_plan_id,
+                    SeminarSlot.status == "available"
+                )
+            ).all()
+            allowed_dates = {slot.date.isoformat() for slot in allowed_slots}
+
+        invalid_dates = [
+            avail.date.isoformat()
+            for avail in data.availabilities
+            if avail.date and avail.date.isoformat() not in allowed_dates
+        ]
+        if invalid_dates:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Availability dates must match available slot dates in the semester plan. "
+                    f"Invalid dates: {', '.join(invalid_dates[:5])}"
+                )
+            )
+
         for avail in list(suggestion.availability):
             db.delete(avail)
     
@@ -2565,11 +2610,22 @@ async def get_speaker_availability_by_token(token: str, db: Session = Depends(ge
             "date": avail.date.isoformat(),
             "preference": avail.preference
         })
+
+    allowed_slot_dates: List[str] = []
+    if suggestion.semester_plan_id:
+        allowed_slots = db.exec(
+            select(SeminarSlot).where(
+                SeminarSlot.semester_plan_id == suggestion.semester_plan_id,
+                SeminarSlot.status == "available"
+            )
+        ).all()
+        allowed_slot_dates = [slot.date.isoformat() for slot in allowed_slots]
     
     return {
         "speaker_name": suggestion.speaker_name,
         "suggested_topic": suggestion.suggested_topic,
         "availability": availability,
+        "allowed_slot_dates": allowed_slot_dates,
         "has_submitted": db_token.used_at is not None
     }
 

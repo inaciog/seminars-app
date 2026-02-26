@@ -5,15 +5,30 @@ External speaker availability page - redesigned from scratch.
 - Data format consistent with internal: { date, preference } per date
 """
 
+import json
+
 from app.templates import get_external_header_with_logos
 
 
-def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation, suggested_topic, semester_plan, token, semester_start=None, semester_end=None):
+def get_availability_page_html(
+    speaker_name,
+    speaker_email,
+    speaker_affiliation,
+    suggested_topic,
+    semester_plan,
+    token,
+    semester_start=None,
+    semester_end=None,
+    allowed_slot_dates=None,
+):
     """Generate the external availability page with calendar UX matching internal form."""
     if not semester_start:
         semester_start = "2025-01-01"
     if not semester_end:
         semester_end = "2025-06-30"
+
+    allowed_slot_dates = sorted(set(allowed_slot_dates or []))
+    allowed_slot_dates_json = json.dumps(allowed_slot_dates)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -255,7 +270,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
 
                 <div class="section">
                     <h3 class="section-title">Select Available Dates</h3>
-                    <p class="section-hint">Click dates to select. Hold Shift and click to select a range.</p>
+                    <p class="section-hint">You can only select dates with available seminar slots in this semester plan. Hold Shift and click to select a range.</p>
 
                     <div class="calendar-header">
                         <h3 id="currentMonth">January 2025</h3>
@@ -292,6 +307,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
         const API_BASE = '/api/v1/seminars/speaker-tokens';
         const SEMESTER_START = new Date('{semester_start}');
         const SEMESTER_END = new Date('{semester_end}');
+        const ALLOWED_DATES = new Set({allowed_slot_dates_json});
 
         const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
         const weekDays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -319,6 +335,11 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             return t >= SEMESTER_START.getTime() && t <= SEMESTER_END.getTime();
         }}
 
+        function isSelectableDate(d) {{
+            if (!isInSemester(d)) return false;
+            return ALLOWED_DATES.has(formatDate(d));
+        }}
+
         function eachDay(start, end) {{
             const days = [];
             const cur = new Date(start);
@@ -336,7 +357,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
                 const data = await res.json();
                 selectedDates.clear();
                 (data.availability || []).forEach(a => {{
-                    if (a.date) selectedDates.add(a.date);
+                    if (a.date && ALLOWED_DATES.has(a.date)) selectedDates.add(a.date);
                 }});
                 updateDisplay();
                 renderCalendar();
@@ -381,7 +402,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
         }}
 
         function toggleDate(dateStr) {{
-            if (!isInSemester(parseDateStr(dateStr))) return;
+            if (!isSelectableDate(parseDateStr(dateStr))) return;
             if (selectedDates.has(dateStr)) {{
                 selectedDates.delete(dateStr);
             }} else {{
@@ -395,13 +416,13 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
 
         function toggleDateWithShift(dateStr) {{
             const d = parseDateStr(dateStr);
-            if (!isInSemester(d)) return;
+            if (!isSelectableDate(d)) return;
 
             if (isShiftPressed && lastSelectedDate) {{
                 const start = lastSelectedDate < d ? lastSelectedDate : d;
                 const end = lastSelectedDate < d ? d : lastSelectedDate;
                 eachDay(start, end).forEach(day => {{
-                    if (isInSemester(day)) selectedDates.add(formatDate(day));
+                    if (isSelectableDate(day)) selectedDates.add(formatDate(day));
                 }});
                 lastSelectedDate = d;
             }} else if (selectedDates.has(dateStr)) {{
@@ -500,7 +521,7 @@ def get_availability_page_html(speaker_name, speaker_email, speaker_affiliation,
             for (let day = 1; day <= last.getDate(); day++) {{
                 const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
                 const dateStr = formatDate(d);
-                const disabled = !isInSemester(d);
+                const disabled = !isSelectableDate(d);
                 const selected = selectedDates.has(dateStr);
 
                 let rangeClass = '';
