@@ -449,7 +449,7 @@ def get_or_create_workflow(db: Session, suggestion_id: int) -> SpeakerWorkflow:
     return workflow
 
 def build_speaker_status(workflow: Optional[SpeakerWorkflow], suggestion: SpeakerSuggestion) -> dict:
-    """Build simplified speaker status with 4-step flow."""
+    """Build simplified speaker status with 4-step flow driven only by workflow checkboxes."""
     if not workflow:
         return {
             "code": "waiting_availability",
@@ -457,34 +457,7 @@ def build_speaker_status(workflow: Optional[SpeakerWorkflow], suggestion: Speake
             "message": "Please submit your available dates using the availability link provided in our email.",
             "step": 1,
         }
-    
-    # Step 1: Waiting for availability (if availability not received yet)
-    if not workflow.availability_dates_received:
-        return {
-            "code": "waiting_availability",
-            "title": "Waiting for Date Availability",
-            "message": "Please submit your available dates using the availability link provided in our email.",
-            "step": 1,
-        }
-    
-    # Step 2: Date assigned (availability received but proposal not submitted)
-    if workflow.availability_dates_received and not workflow.proposal_submitted:
-        return {
-            "code": "date_assigned",
-            "title": "Date Assigned",
-            "message": "Your seminar date has been assigned. Please submit your seminar information and proposal.",
-            "step": 2,
-        }
-    
-    # Step 3: Information submitted (proposal submitted but not approved)
-    if workflow.proposal_submitted and not workflow.proposal_approved:
-        return {
-            "code": "info_submitted",
-            "title": "Information Submitted",
-            "message": "Your proposal has been submitted and is currently under review.",
-            "step": 3,
-        }
-    
+
     # Step 4: Proposal approved
     if workflow.proposal_approved:
         return {
@@ -493,7 +466,26 @@ def build_speaker_status(workflow: Optional[SpeakerWorkflow], suggestion: Speake
             "message": "Your proposal has been approved. You can now purchase your travel tickets.",
             "step": 4,
         }
-    
+
+    # Step 3: Information received
+    if workflow.proposal_submitted:
+        return {
+            "code": "info_received",
+            "title": "Information Received",
+            "message": "Your information has been received and is currently under review.",
+            "step": 3,
+        }
+
+    # Step 2: Date assigned/notified
+    if workflow.speaker_notified_of_date:
+        return {
+            "code": "date_assigned",
+            "title": "Date Assigned",
+            "message": "Your seminar date has been assigned. Please submit your seminar information.",
+            "step": 2,
+        }
+
+    # Step 1: Waiting for date availability
     return {
         "code": "waiting_availability",
         "title": "Waiting for Date Availability",
@@ -2553,10 +2545,7 @@ async def submit_speaker_availability(
         db.add(db_avail)
     
     # Do not set used_at - speakers can return and edit anytime
-    workflow = get_or_create_workflow(db, db_token.suggestion_id)
-    workflow.availability_dates_received = True
-    workflow.updated_at = datetime.utcnow()
-    db.add(workflow)
+    # Workflow status checkboxes are controlled manually in the internal system
     if suggestion:
         record_activity(
             db=db,
@@ -2731,10 +2720,7 @@ async def submit_speaker_info(
             speaker.name = data.speaker_name
     
     db_token.used_at = datetime.utcnow()
-    workflow = get_or_create_workflow(db, db_token.suggestion_id)
-    workflow.proposal_submitted = True
-    workflow.updated_at = datetime.utcnow()
-    db.add(workflow)
+    # Workflow status checkboxes are controlled manually in the internal system
     record_activity(
         db=db,
         event_type="SPEAKER_INFO_SUBMITTED",
@@ -3679,7 +3665,7 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
     steps = [
         ("1. Waiting for Date Availability", status_payload['step'] >= 1, status_payload['step'] == 1),
         ("2. Date Assigned", status_payload['step'] >= 2, status_payload['step'] == 2),
-        ("3. Information Submitted", status_payload['step'] >= 3, status_payload['step'] == 3),
+        ("3. Information Received", status_payload['step'] >= 3, status_payload['step'] == 3),
         ("4. Proposal Approved", status_payload['step'] >= 4, status_payload['step'] == 4),
     ]
     
@@ -3772,7 +3758,7 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
         action_links_html = """
         <div class='action-section waiting'>
             <h3>⏳ Waiting for Review</h3>
-            <p>Your proposal is being reviewed. You will be notified once it has been approved.</p>
+            <p>Your information has been received and is being reviewed. You will be notified once it has been approved.</p>
         </div>
         """
     elif status_payload['step'] == 4:

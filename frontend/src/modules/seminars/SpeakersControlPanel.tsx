@@ -57,7 +57,7 @@ const WORKFLOW_LABELS: [string, string][] = [
   ['speaker_notified_of_date', 'Date notified'],
   ['meal_ok', 'Meal OK'],
   ['guesthouse_hotel_reserved', 'Hotel reserved'],
-  ['proposal_submitted', 'Proposal submitted'],
+  ['proposal_submitted', 'Information received'],
   ['proposal_approved', 'Proposal approved'],
 ];
 

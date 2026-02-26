@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026 — External Speaker Status Fully Checkbox-Driven
+
+### Change
+Speaker external status page now derives status strictly from internal workflow checkboxes.
+
+### Status Criteria (checkbox only)
+- Step 1 (Waiting for Date Availability): default when later-step checkboxes are not checked
+- Step 2 (Date Assigned): `speaker_notified_of_date`
+- Step 3 (Information Received): `proposal_submitted` (renamed label in UI to “Information received”)
+- Step 4 (Proposal Approved): `proposal_approved`
+
+### Important Behavior Change
+- External availability submission no longer auto-checks workflow status checkboxes.
+- External info submission no longer auto-checks workflow status checkboxes.
+- Internal checkboxes are now the only criterion for status progression.
+
+---
+
 ## 2026 — Fix Missing Ticket Instructions on Approved Status Page
 
 ### Issue
