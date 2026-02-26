@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026 — Replace Success Popups with Inline Status
+
+### Change
+Removed blocking success popup dialogs in seminar details modal and replaced them with inline status messages shown in the modal footer.
+
+### Updated Flows
+- Save changes
+- File upload success
+- File delete success
+
+### Notes
+- Error dialogs were left unchanged in this pass.
+
+---
+
 ## 2026 — Speaker Availability Limited to Semester Plan Slot Dates
 
 ### Issue

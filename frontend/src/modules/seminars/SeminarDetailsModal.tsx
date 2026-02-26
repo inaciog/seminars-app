@@ -143,6 +143,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingFile, setUploadingFile] = useState<string | null>(null);
   const [deletingFile, setDeletingFile] = useState<number | null>(null);
+  const [inlineStatus, setInlineStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   
   // Use refs to store form values to avoid re-render focus loss
   const formValues = useRef<Record<string, string | boolean>>({
@@ -334,7 +335,8 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
         },
       }));
       queryClient.invalidateQueries({ queryKey: ['seminars'] });
-      alert('Saved successfully!');
+      setInlineStatus({ type: 'success', message: 'Changes saved successfully.' });
+      setTimeout(() => setInlineStatus(null), 2500);
     } catch (error) {
       alert('Failed to save: ' + (error as Error).message);
     } finally {
@@ -362,7 +364,8 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
       // Refetch both details and files list
       queryClient.invalidateQueries({ queryKey: ['seminar-details', seminarId] });
       refetchFiles();
-      alert('File uploaded successfully!');
+      setInlineStatus({ type: 'success', message: 'File uploaded successfully.' });
+      setTimeout(() => setInlineStatus(null), 2500);
     } catch (error) {
       alert('Upload failed: ' + (error as Error).message);
     } finally {
@@ -383,7 +386,8 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
       
       // Refetch files list
       refetchFiles();
-      alert('File deleted successfully!');
+      setInlineStatus({ type: 'success', message: 'File deleted successfully.' });
+      setTimeout(() => setInlineStatus(null), 2500);
     } catch (error) {
       alert('Delete failed: ' + (error as Error).message);
     } finally {
@@ -998,7 +1002,18 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end gap-3 px-6 py-4 border-t bg-gray-50">
+          <div className="flex items-center justify-between gap-3 px-6 py-4 border-t bg-gray-50">
+            <div>
+              {inlineStatus && (
+                <div className={cn(
+                  'text-sm px-3 py-2 rounded-lg',
+                  inlineStatus.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                )}>
+                  {inlineStatus.message}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
@@ -1013,6 +1028,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
             </button>
+            </div>
           </div>
         </form>
       </div>
