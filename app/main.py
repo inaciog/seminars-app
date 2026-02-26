@@ -3642,15 +3642,38 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
     workflow = db.exec(workflow_stmt).first()
     status_payload = build_speaker_status(workflow, suggestion)
     
-    # Get seminar details if assigned
+    # Get seminar details tied to this suggestion (for ticket_purchase_info display)
     seminar = None
     seminar_details = None
-    if suggestion.speaker_id:
+
+    # 1) Prefer seminar from most recent info token for this suggestion
+    info_token_stmt = select(SpeakerToken).where(
+        SpeakerToken.suggestion_id == suggestion.id,
+        SpeakerToken.token_type == "info",
+        SpeakerToken.seminar_id.isnot(None),
+    ).order_by(SpeakerToken.created_at.desc())
+    info_token = db.exec(info_token_stmt).first()
+    if info_token and info_token.seminar_id:
+        seminar = db.get(Seminar, info_token.seminar_id)
+
+    # 2) Fallback: seminar assigned to slot for this suggestion
+    if not seminar:
+        slot_stmt = select(SeminarSlot).where(
+            SeminarSlot.assigned_suggestion_id == suggestion.id,
+            SeminarSlot.assigned_seminar_id.isnot(None),
+        ).order_by(SeminarSlot.date.desc())
+        assigned_slot = db.exec(slot_stmt).first()
+        if assigned_slot and assigned_slot.assigned_seminar_id:
+            seminar = db.get(Seminar, assigned_slot.assigned_seminar_id)
+
+    # 3) Last fallback: latest seminar for speaker
+    if not seminar and suggestion.speaker_id:
         seminar_stmt = select(Seminar).where(Seminar.speaker_id == suggestion.speaker_id).order_by(Seminar.date.desc())
         seminar = db.exec(seminar_stmt).first()
-        if seminar:
-            details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar.id)
-            seminar_details = db.exec(details_stmt).first()
+
+    if seminar:
+        details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar.id)
+        seminar_details = db.exec(details_stmt).first()
     
     # Build status steps
     steps = [

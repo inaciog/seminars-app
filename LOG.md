@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026 — Fix Missing Ticket Instructions on Approved Status Page
+
+### Issue
+Approved external status page sometimes did not show ticket purchase instructions even when `ticket_purchase_info` was filled in seminar details.
+
+### Root Cause
+Status page selected seminar by `speaker_id` only, which can point to a different seminar than the one linked to the current suggestion/token.
+
+### Fix
+Updated seminar resolution order in speaker status page:
+1. Most recent info token seminar for the suggestion
+2. Slot assignment via `assigned_suggestion_id`
+3. Fallback by speaker_id
+
+This ensures `ticket_purchase_info` is read from the correct seminar details record.
+
+---
+
 ## 2026 — Speaker Status Page (Approved State) Simplification
 
 ### Change
