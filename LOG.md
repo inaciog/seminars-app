@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026 — Clarified Speaker Status Messaging (Confirmed Seminar vs Ticket Timing)
+
+### Change
+Updated external speaker status page wording to make clear that, before proposal approval, the seminar is still confirmed and can be planned normally.
+
+### Wording Adjustments
+- Updated pre-approval warning box text.
+- Updated Step 2 (Date Assigned) message.
+- Updated Step 3 (Information Received / Waiting for Review) message.
+
+### Clarification
+Only ticket purchase timing is restricted (must be after proposal approval) for bureaucratic reimbursement reasons.
+
+---
+
 ## 2026 — External Speaker Status Fully Checkbox-Driven
 
 ### Change

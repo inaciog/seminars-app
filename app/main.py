@@ -481,7 +481,7 @@ def build_speaker_status(workflow: Optional[SpeakerWorkflow], suggestion: Speake
         return {
             "code": "date_assigned",
             "title": "Date Assigned",
-            "message": "Your seminar date has been assigned. Please submit your seminar information.",
+            "message": "Your seminar is confirmed and the date has been assigned. You can plan normally; please submit your seminar information. For bureaucratic reasons, ticket purchase must wait until proposal approval.",
             "step": 2,
         }
 
@@ -3679,9 +3679,8 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
     if status_payload['step'] < 4:
         warning_box = """
         <div class='warning-box'>
-            <div class='warning-title'>⚠️ IMPORTANT: Do Not Purchase Travel Tickets Yet</div>
-            <p>Please do <strong>NOT</strong> buy your flight or train tickets until your proposal has been approved. 
-            We will notify you once your proposal is approved and provide information about where you can purchase your tickets.</p>
+            <div class='warning-title'>⚠️ Ticket Purchase Timing</div>
+            <p>Your seminar is confirmed and you can plan confidently for it to happen. For bureaucratic reimbursement reasons only, please wait for proposal approval before purchasing flight/train tickets.</p>
         </div>
         """
     
@@ -3758,7 +3757,7 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
         action_links_html = """
         <div class='action-section waiting'>
             <h3>⏳ Waiting for Review</h3>
-            <p>Your information has been received and is being reviewed. You will be notified once it has been approved.</p>
+            <p>Your information has been received and is being reviewed. Your seminar remains confirmed and can be planned normally; only ticket purchase must wait until approval.</p>
         </div>
         """
     elif status_payload['step'] == 4:
