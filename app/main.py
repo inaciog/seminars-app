@@ -3695,10 +3695,20 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
         SpeakerToken.expires_at > datetime.utcnow(),
     ).order_by(SpeakerToken.created_at.desc())
     avail_token = db.exec(avail_stmt).first()
-    if avail_token:
-        availability_token = avail_token.token
+    if not avail_token:
+        avail_token = SpeakerToken(
+            token=generate_token(),
+            suggestion_id=suggestion.id,
+            token_type="availability",
+            expires_at=datetime.utcnow() + timedelta(days=90),
+        )
+        db.add(avail_token)
+        db.commit()
+        db.refresh(avail_token)
+    availability_token = avail_token.token
     
     # Get info token (for step 2)
+    info_token_obj = None
     if seminar:
         info_stmt = select(SpeakerToken).where(
             SpeakerToken.suggestion_id == suggestion.id,
@@ -3707,8 +3717,26 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
             SpeakerToken.expires_at > datetime.utcnow(),
         ).order_by(SpeakerToken.created_at.desc())
         info_token_obj = db.exec(info_stmt).first()
-        if info_token_obj:
-            info_token = info_token_obj.token
+    else:
+        info_stmt = select(SpeakerToken).where(
+            SpeakerToken.suggestion_id == suggestion.id,
+            SpeakerToken.token_type == "info",
+            SpeakerToken.expires_at > datetime.utcnow(),
+        ).order_by(SpeakerToken.created_at.desc())
+        info_token_obj = db.exec(info_stmt).first()
+
+    if not info_token_obj:
+        info_token_obj = SpeakerToken(
+            token=generate_token(),
+            suggestion_id=suggestion.id,
+            token_type="info",
+            seminar_id=seminar.id if seminar else None,
+            expires_at=datetime.utcnow() + timedelta(days=90),
+        )
+        db.add(info_token_obj)
+        db.commit()
+        db.refresh(info_token_obj)
+    info_token = info_token_obj.token
     
     # Build action links based on current step
     action_links_html = ""
@@ -3722,37 +3750,21 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
         pass  # Column might not exist yet
     
     if status_payload['step'] == 1:
-        if availability_token:
-            action_links_html = f"""
-            <div class='action-section'>
-                <h3>📝 Action Required</h3>
-                <p>Please submit your available dates for the seminar:</p>
-                <a href='/speaker/availability/{availability_token}' class='action-link primary'>Submit Availability</a>
-            </div>
-            """
-        else:
-            action_links_html = """
-            <div class='action-section waiting'>
-                <h3>⏳ Waiting for Availability Request</h3>
-                <p>You will receive an email with a link to submit your available dates soon. If you have any questions, please contact the organizers.</p>
-            </div>
-            """
+        action_links_html = f"""
+        <div class='action-section'>
+            <h3>📝 Action Required</h3>
+            <p>Please submit your available dates for the seminar:</p>
+            <a href='/speaker/availability/{availability_token}' class='action-link primary'>Submit Availability</a>
+        </div>
+        """
     elif status_payload['step'] == 2:
-        if info_token:
-            action_links_html = f"""
-            <div class='action-section'>
-                <h3>📝 Action Required</h3>
-                <p>Please submit your seminar information and proposal:</p>
-                <a href='/speaker/info/{info_token}' class='action-link primary'>Submit Information</a>
-            </div>
-            """
-        else:
-            action_links_html = """
-            <div class='action-section waiting'>
-                <h3>⏳ Waiting for Information Request</h3>
-                <p>You will receive an email with a link to submit your seminar information soon. If you have any questions, please contact the organizers.</p>
-            </div>
-            """
+        action_links_html = f"""
+        <div class='action-section'>
+            <h3>📝 Action Required</h3>
+            <p>Please submit your seminar information and proposal:</p>
+            <a href='/speaker/info/{info_token}' class='action-link primary'>Submit Information</a>
+        </div>
+        """
     elif status_payload['step'] == 3:
         action_links_html = """
         <div class='action-section waiting'>

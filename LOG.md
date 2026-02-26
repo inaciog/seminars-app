@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026 — Status Page Always Shows Availability/Info Action Buttons
+
+### Change
+On external speaker status page:
+- Step 1 now always shows a **Submit Availability** button.
+- Step 2 now always shows a **Submit Information** button.
+
+### Implementation
+- If an unexpired token is missing, the page now auto-generates the required token (`availability` or `info`) and renders the button link immediately.
+- Removed passive “Waiting for Availability Request” and “Waiting for Information Request” boxes.
+
+---
+
 ## 2026 — Clarified Speaker Status Messaging (Confirmed Seminar vs Ticket Timing)
 
 ### Change
