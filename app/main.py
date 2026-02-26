@@ -16,7 +16,7 @@ import logging
 import time
 from datetime import datetime, date as date_type, timedelta
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Any
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Form, Query
@@ -492,6 +492,53 @@ def build_speaker_status(workflow: Optional[SpeakerWorkflow], suggestion: Speake
         "message": "Please submit your available dates using the availability link provided in our email.",
         "step": 1,
     }
+
+
+def _activity_json_safe(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date_type):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _activity_json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_activity_json_safe(v) for v in value]
+    return value
+
+
+def _build_activity_changes(before: dict, after: dict, labels: Optional[dict] = None) -> List[dict]:
+    labels = labels or {}
+    changes: List[dict] = []
+    for field in sorted(set(before.keys()) | set(after.keys())):
+        before_value = _activity_json_safe(before.get(field))
+        after_value = _activity_json_safe(after.get(field))
+        if before_value == after_value:
+            continue
+        if before_value is None and after_value is not None:
+            change_type = "added"
+        elif before_value is not None and after_value is None:
+            change_type = "removed"
+        else:
+            change_type = "updated"
+        changes.append(
+            {
+                "field": field,
+                "label": labels.get(field, field.replace("_", " ").title()),
+                "change_type": change_type,
+                "before": before_value,
+                "after": after_value,
+            }
+        )
+    return changes
+
+
+def _activity_details_from_changes(changes: List[dict], extra: Optional[dict] = None) -> dict:
+    payload = {
+        "changes": changes,
+    }
+    if extra:
+        payload.update(_activity_json_safe(extra))
+    return payload
 
 def refresh_fallback_mirror(db: Session):
     mirror_dir = Path(settings.fallback_mirror_dir)
@@ -1708,8 +1755,11 @@ async def update_seminar(seminar_id: int, update: SeminarUpdate, db: Session = D
         raise HTTPException(status_code=404, detail="Seminar not found")
     
     update_data = update.model_dump(exclude_unset=True)
+    before = {key: getattr(seminar, key) for key in update_data.keys()}
     for key, value in update_data.items():
         setattr(seminar, key, value)
+    after = {key: getattr(seminar, key) for key in update_data.keys()}
+    changes = _build_activity_changes(before, after)
     
     seminar.updated_at = datetime.utcnow()
     record_activity(
@@ -1719,6 +1769,7 @@ async def update_seminar(seminar_id: int, update: SeminarUpdate, db: Session = D
         entity_type="seminar",
         entity_id=seminar.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(changes),
     )
     db.commit()
     db.refresh(seminar)
@@ -1791,8 +1842,11 @@ async def update_seminar_v1(seminar_id: int, update: SeminarUpdate, db: Session 
         raise HTTPException(status_code=404, detail="Seminar not found")
     
     update_data = update.model_dump(exclude_unset=True)
+    before = {key: getattr(seminar, key) for key in update_data.keys()}
     for key, value in update_data.items():
         setattr(seminar, key, value)
+    after = {key: getattr(seminar, key) for key in update_data.keys()}
+    changes = _build_activity_changes(before, after)
     
     seminar.updated_at = datetime.utcnow()
     record_activity(
@@ -1802,6 +1856,7 @@ async def update_seminar_v1(seminar_id: int, update: SeminarUpdate, db: Session 
         entity_type="seminar",
         entity_id=seminar.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(changes),
     )
     db.commit()
     db.refresh(seminar)
@@ -1907,6 +1962,36 @@ async def update_seminar_details_v1(
     seminar = db.get(Seminar, seminar_id)
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
+
+    details_field_labels = {
+        "title": "Title",
+        "abstract": "Abstract",
+        "room": "Room",
+        "check_in_date": "Check-in Date",
+        "check_out_date": "Check-out Date",
+        "passport_number": "Passport Number",
+        "passport_country": "Passport Country",
+        "payment_email": "Payment Email",
+        "contact_number": "Contact Number",
+        "beneficiary_name": "Beneficiary Name",
+        "bank_account_number": "Bank Account Number",
+        "bank_region": "Bank Region",
+        "iban": "IBAN",
+        "aba_routing_number": "ABA Routing Number",
+        "bsb_number": "BSB Number",
+        "bank_name": "Bank Name",
+        "bank_address": "Bank Address",
+        "swift_code": "SWIFT Code",
+        "currency": "Currency",
+        "beneficiary_address": "Beneficiary Address",
+        "departure_city": "Departure City",
+        "travel_method": "Travel Method",
+        "estimated_travel_cost": "Estimated Travel Cost",
+        "needs_accommodation": "Needs Accommodation",
+        "accommodation_nights": "Accommodation Nights",
+        "estimated_hotel_cost": "Estimated Hotel Cost",
+        "ticket_purchase_info": "Ticket Purchase Info",
+    }
     
     # Update seminar fields
     if data.title is not None:
@@ -1932,6 +2017,36 @@ async def update_seminar_details_v1(
     # Get or create details
     details_stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
     details = db.exec(details_stmt).first()
+
+    before_snapshot = {
+        "title": seminar.title,
+        "abstract": seminar.abstract,
+        "room": seminar.room.name if seminar.room else None,
+        "check_in_date": details.check_in_date if details else None,
+        "check_out_date": details.check_out_date if details else None,
+        "passport_number": details.passport_number if details else None,
+        "passport_country": details.passport_country if details else None,
+        "payment_email": details.payment_email if details else None,
+        "contact_number": getattr(details, "contact_number", None) if details else None,
+        "beneficiary_name": details.beneficiary_name if details else None,
+        "bank_account_number": details.bank_account_number if details else None,
+        "bank_region": getattr(details, "bank_region", None) if details else None,
+        "iban": getattr(details, "iban", None) if details else None,
+        "aba_routing_number": getattr(details, "aba_routing_number", None) if details else None,
+        "bsb_number": getattr(details, "bsb_number", None) if details else None,
+        "bank_name": details.bank_name if details else None,
+        "bank_address": details.bank_address if details else None,
+        "swift_code": details.swift_code if details else None,
+        "currency": details.currency if details else None,
+        "beneficiary_address": details.beneficiary_address if details else None,
+        "departure_city": details.departure_city if details else None,
+        "travel_method": details.travel_method if details else None,
+        "estimated_travel_cost": details.estimated_travel_cost if details else None,
+        "needs_accommodation": details.needs_accommodation if details else None,
+        "accommodation_nights": details.accommodation_nights if details else None,
+        "estimated_hotel_cost": details.estimated_hotel_cost if details else None,
+        "ticket_purchase_info": getattr(details, "ticket_purchase_info", None) if details else None,
+    }
     
     if not details:
         details = SeminarDetails(seminar_id=seminar_id)
@@ -2001,6 +2116,40 @@ async def update_seminar_details_v1(
     
     details.updated_at = datetime.utcnow()
     seminar.updated_at = datetime.utcnow()
+
+    db.flush()
+    db.refresh(seminar)
+    db.refresh(details)
+    after_snapshot = {
+        "title": seminar.title,
+        "abstract": seminar.abstract,
+        "room": seminar.room.name if seminar.room else None,
+        "check_in_date": details.check_in_date,
+        "check_out_date": details.check_out_date,
+        "passport_number": details.passport_number,
+        "passport_country": details.passport_country,
+        "payment_email": details.payment_email,
+        "contact_number": getattr(details, "contact_number", None),
+        "beneficiary_name": details.beneficiary_name,
+        "bank_account_number": details.bank_account_number,
+        "bank_region": getattr(details, "bank_region", None),
+        "iban": getattr(details, "iban", None),
+        "aba_routing_number": getattr(details, "aba_routing_number", None),
+        "bsb_number": getattr(details, "bsb_number", None),
+        "bank_name": details.bank_name,
+        "bank_address": details.bank_address,
+        "swift_code": details.swift_code,
+        "currency": details.currency,
+        "beneficiary_address": details.beneficiary_address,
+        "departure_city": details.departure_city,
+        "travel_method": details.travel_method,
+        "estimated_travel_cost": details.estimated_travel_cost,
+        "needs_accommodation": details.needs_accommodation,
+        "accommodation_nights": details.accommodation_nights,
+        "estimated_hotel_cost": details.estimated_hotel_cost,
+        "ticket_purchase_info": getattr(details, "ticket_purchase_info", None),
+    }
+    changes = _build_activity_changes(before_snapshot, after_snapshot, details_field_labels)
     
     record_activity(
         db=db,
@@ -2009,6 +2158,7 @@ async def update_seminar_details_v1(
         entity_type="seminar",
         entity_id=seminar.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(changes),
     )
     db.commit()
     db.refresh(seminar)
@@ -2037,6 +2187,19 @@ async def create_semester_plan(plan: SemesterPlanCreate, db: Session = Depends(g
         semester_plan_id=None,
         entity_type="semester_plan",
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "name": db_plan.name,
+                    "academic_year": db_plan.academic_year,
+                    "semester": db_plan.semester,
+                    "default_room": db_plan.default_room,
+                    "default_start_time": db_plan.default_start_time,
+                    "default_duration_minutes": db_plan.default_duration_minutes,
+                },
+            )
+        ),
     )
     db.commit()
     db.refresh(db_plan)
@@ -2056,8 +2219,12 @@ async def update_semester_plan(plan_id: int, update: SemesterPlanCreate, db: Ses
     if not plan:
         raise HTTPException(status_code=404, detail="Semester plan not found")
     
-    for key, value in update.model_dump().items():
+    update_data = update.model_dump()
+    before = {key: getattr(plan, key) for key in update_data.keys()}
+    for key, value in update_data.items():
         setattr(plan, key, value)
+    after = {key: getattr(plan, key) for key in update_data.keys()}
+    changes = _build_activity_changes(before, after)
     record_activity(
         db=db,
         event_type="SEMESTER_PLAN_UPDATED",
@@ -2066,6 +2233,7 @@ async def update_semester_plan(plan_id: int, update: SemesterPlanCreate, db: Ses
         entity_type="semester_plan",
         entity_id=plan.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(changes),
     )
     db.commit()
     db.refresh(plan)
@@ -2101,6 +2269,17 @@ async def create_slot(plan_id: int, slot: SeminarSlotCreate, db: Session = Depen
         semester_plan_id=plan_id,
         entity_type="slot",
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "date": db_slot.date,
+                    "start_time": db_slot.start_time,
+                    "end_time": db_slot.end_time,
+                    "room": db_slot.room,
+                },
+            )
+        ),
     )
     db.commit()
     db.refresh(db_slot)
@@ -2113,8 +2292,23 @@ async def update_slot(slot_id: int, update: SeminarSlotCreate, db: Session = Dep
     if not slot:
         raise HTTPException(status_code=404, detail="Slot not found")
     
-    for key, value in update.model_dump().items():
+    update_data = update.model_dump()
+    before = {key: getattr(slot, key) for key in update_data.keys()}
+    for key, value in update_data.items():
         setattr(slot, key, value)
+    after = {key: getattr(slot, key) for key in update_data.keys()}
+    changes = _build_activity_changes(before, after)
+
+    record_activity(
+        db=db,
+        event_type="SLOT_UPDATED",
+        summary=f"Updated slot on {slot.date.isoformat()} at {slot.start_time}",
+        semester_plan_id=slot.semester_plan_id,
+        entity_type="slot",
+        entity_id=slot.id,
+        actor=user.get("id"),
+        details=_activity_details_from_changes(changes),
+    )
     
     db.commit()
     db.refresh(slot)
@@ -2136,8 +2330,20 @@ async def unassign_slot(slot_id: int, db: Session = Depends(get_db), user: dict 
     if not slot:
         raise HTTPException(status_code=404, detail="Slot not found")
     
+    previous_assigned_seminar_id = slot.assigned_seminar_id
+    previous_status = slot.status
     slot.assigned_seminar_id = None
     slot.status = "available"
+    changes = _build_activity_changes(
+        {
+            "assigned_seminar_id": previous_assigned_seminar_id,
+            "status": previous_status,
+        },
+        {
+            "assigned_seminar_id": slot.assigned_seminar_id,
+            "status": slot.status,
+        },
+    )
     record_activity(
         db=db,
         event_type="SLOT_UNASSIGNED",
@@ -2146,6 +2352,13 @@ async def unassign_slot(slot_id: int, db: Session = Depends(get_db), user: dict 
         entity_type="slot",
         entity_id=slot.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            changes,
+            extra={
+                "slot_date": slot.date,
+                "slot_start_time": slot.start_time,
+            },
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -2205,6 +2418,20 @@ async def create_speaker_suggestion(suggestion: SpeakerSuggestionCreate, db: Ses
         entity_type="speaker_suggestion",
         entity_id=db_suggestion.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "speaker_name": db_suggestion.speaker_name,
+                    "speaker_email": db_suggestion.speaker_email,
+                    "speaker_affiliation": db_suggestion.speaker_affiliation,
+                    "suggested_topic": db_suggestion.suggested_topic,
+                    "priority": db_suggestion.priority,
+                    "status": db_suggestion.status,
+                    "semester_plan_id": db_suggestion.semester_plan_id,
+                },
+            )
+        ),
     )
     db.commit()
     db.refresh(db_suggestion)
@@ -2236,10 +2463,35 @@ async def add_speaker_availability(
     suggestion = db.get(SpeakerSuggestion, suggestion_id)
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    added_dates = [avail.date.isoformat() for avail in availabilities]
     
     for avail in availabilities:
         db_avail = SpeakerAvailability(suggestion_id=suggestion_id, **avail.model_dump())
         db.add(db_avail)
+
+    record_activity(
+        db=db,
+        event_type="AVAILABILITY_SUBMITTED",
+        summary=f"Availability added for {suggestion.speaker_name}",
+        semester_plan_id=suggestion.semester_plan_id,
+        entity_type="speaker_suggestion",
+        entity_id=suggestion.id,
+        actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "dates_added": added_dates,
+                    "entries_added": len(availabilities),
+                },
+                labels={
+                    "dates_added": "Dates Added",
+                    "entries_added": "Entries Added",
+                },
+            )
+        ),
+    )
     
     db.commit()
     refresh_fallback_mirror(db)
@@ -2251,8 +2503,23 @@ async def update_speaker_suggestion(suggestion_id: int, update: SpeakerSuggestio
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     
-    for key, value in update.model_dump().items():
+    update_data = update.model_dump()
+    before = {key: getattr(suggestion, key) for key in update_data.keys()}
+    for key, value in update_data.items():
         setattr(suggestion, key, value)
+    after = {key: getattr(suggestion, key) for key in update_data.keys()}
+    changes = _build_activity_changes(before, after)
+
+    record_activity(
+        db=db,
+        event_type="SPEAKER_SUGGESTION_UPDATED",
+        summary=f"Updated suggestion for {suggestion.speaker_name}",
+        semester_plan_id=suggestion.semester_plan_id,
+        entity_type="speaker_suggestion",
+        entity_id=suggestion.id,
+        actor=user.get("id"),
+        details=_activity_details_from_changes(changes),
+    )
     
     db.commit()
     db.refresh(suggestion)
@@ -2341,6 +2608,21 @@ async def create_availability_token(
         entity_type="speaker_suggestion",
         entity_id=suggestion.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "token_type": "availability",
+                    "expires_at": expires_at,
+                    "link": f"/speaker/availability/{token}",
+                },
+                labels={
+                    "token_type": "Token Type",
+                    "expires_at": "Expires At",
+                    "link": "Link",
+                },
+            )
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -2444,6 +2726,23 @@ async def create_info_token(
         entity_type="speaker_suggestion",
         entity_id=suggestion.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "token_type": "info",
+                    "seminar_id": seminar_id,
+                    "expires_at": expires_at,
+                    "link": f"/speaker/info/{token}",
+                },
+                labels={
+                    "token_type": "Token Type",
+                    "seminar_id": "Seminar",
+                    "expires_at": "Expires At",
+                    "link": "Link",
+                },
+            )
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -2508,7 +2807,12 @@ async def submit_speaker_availability(
     
     # Replace existing availability: delete old entries, add new ones
     suggestion = db.get(SpeakerSuggestion, db_token.suggestion_id)
+    previous_availability: List[dict] = []
     if suggestion:
+        previous_availability = [
+            {"date": avail.date.isoformat(), "preference": avail.preference}
+            for avail in suggestion.availability
+        ]
         allowed_dates = set()
         if suggestion.semester_plan_id:
             allowed_slots = db.exec(
@@ -2536,6 +2840,10 @@ async def submit_speaker_availability(
             db.delete(avail)
     
     # Add new availability entries
+    new_availability = [
+        {"date": avail.date.isoformat(), "preference": avail.preference}
+        for avail in data.availabilities
+    ]
     for avail in data.availabilities:
         db_avail = SpeakerAvailability(
             suggestion_id=db_token.suggestion_id,
@@ -2555,6 +2863,22 @@ async def submit_speaker_availability(
             entity_type="speaker_suggestion",
             entity_id=suggestion.id,
             actor=f"token:{token[:8]}",
+            details=_activity_details_from_changes(
+                _build_activity_changes(
+                    {
+                        "availability": previous_availability,
+                        "entries": len(previous_availability),
+                    },
+                    {
+                        "availability": new_availability,
+                        "entries": len(new_availability),
+                    },
+                    labels={
+                        "availability": "Availability",
+                        "entries": "Entries",
+                    },
+                )
+            ),
         )
     db.commit()
     refresh_fallback_mirror(db)
@@ -2635,10 +2959,26 @@ async def submit_speaker_info(
     
     if not seminar_id:
         raise HTTPException(status_code=400, detail="No seminar associated with this token")
+
+    seminar = db.get(Seminar, seminar_id)
+    speaker = db.get(Speaker, seminar.speaker_id) if seminar and seminar.speaker_id else None
     
     # Get or create seminar details
     stmt = select(SeminarDetails).where(SeminarDetails.seminar_id == seminar_id)
     details = db.exec(stmt).first()
+
+    before_snapshot = {
+        "final_talk_title": seminar.title if seminar else None,
+        "abstract": seminar.abstract if seminar else None,
+        "speaker_name": speaker.name if speaker else None,
+        "passport_country": details.passport_country if details else None,
+        "departure_city": details.departure_city if details else None,
+        "travel_method": details.travel_method if details else None,
+        "check_in_date": details.check_in_date if details else None,
+        "check_out_date": details.check_out_date if details else None,
+        "payment_email": details.payment_email if details else None,
+        "contact_number": getattr(details, "contact_number", None) if details else None,
+    }
     
     if not details:
         details = SeminarDetails(seminar_id=seminar_id)
@@ -2704,7 +3044,6 @@ async def submit_speaker_info(
     details.updated_at = datetime.utcnow()
     
     # Update seminar title and abstract if provided
-    seminar = db.get(Seminar, seminar_id)
     if seminar:
         if data.final_talk_title:
             seminar.title = data.final_talk_title
@@ -2715,11 +3054,25 @@ async def submit_speaker_info(
     
     # Update speaker name if provided
     if data.speaker_name and seminar and seminar.speaker_id:
-        speaker = db.get(Speaker, seminar.speaker_id)
         if speaker:
             speaker.name = data.speaker_name
     
     db_token.used_at = datetime.utcnow()
+    db.flush()
+
+    after_snapshot = {
+        "final_talk_title": seminar.title if seminar else None,
+        "abstract": seminar.abstract if seminar else None,
+        "speaker_name": speaker.name if speaker else None,
+        "passport_country": details.passport_country,
+        "departure_city": details.departure_city,
+        "travel_method": details.travel_method,
+        "check_in_date": details.check_in_date,
+        "check_out_date": details.check_out_date,
+        "payment_email": details.payment_email,
+        "contact_number": getattr(details, "contact_number", None),
+    }
+
     # Workflow status checkboxes are controlled manually in the internal system
     record_activity(
         db=db,
@@ -2729,6 +3082,7 @@ async def submit_speaker_info(
         entity_type="speaker_suggestion",
         entity_id=suggestion.id if suggestion else None,
         actor=f"token:{token[:8]}",
+        details=_activity_details_from_changes(_build_activity_changes(before_snapshot, after_snapshot)),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -2958,6 +3312,15 @@ async def assign_speaker_to_slot(
     suggestion = db.get(SpeakerSuggestion, request.suggestion_id)
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    before_slot = {
+        "assigned_seminar_id": slot.assigned_seminar_id,
+        "assigned_suggestion_id": slot.assigned_suggestion_id,
+        "status": slot.status,
+    }
+    before_suggestion = {
+        "status": suggestion.status,
+    }
     
     # Find or create speaker based on suggestion
     speaker_id = suggestion.speaker_id
@@ -3027,7 +3390,24 @@ async def assign_speaker_to_slot(
         entity_type="slot",
         entity_id=slot.id,
         actor=user.get("id"),
-        details={"suggestion_id": suggestion.id, "seminar_id": seminar.id},
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {
+                    **before_slot,
+                    "suggestion_status": before_suggestion["status"],
+                },
+                {
+                    "assigned_seminar_id": slot.assigned_seminar_id,
+                    "assigned_suggestion_id": slot.assigned_suggestion_id,
+                    "status": slot.status,
+                    "suggestion_status": suggestion.status,
+                    "speaker_name": suggestion.speaker_name,
+                    "seminar_title": seminar.title,
+                },
+                labels={"suggestion_status": "Suggestion Status"},
+            ),
+            extra={"slot_date": slot.date, "slot_start_time": slot.start_time},
+        ),
     )
     
     db.commit()
@@ -3050,6 +3430,16 @@ async def assign_seminar_to_slot(
     seminar = db.get(Seminar, request.seminar_id)
     if not seminar:
         raise HTTPException(status_code=404, detail="Seminar not found")
+
+    before_slot = {
+        "assigned_seminar_id": slot.assigned_seminar_id,
+        "status": slot.status,
+    }
+    before_seminar = {
+        "date": seminar.date,
+        "start_time": seminar.start_time,
+        "end_time": seminar.end_time,
+    }
     
     # Update seminar to match slot date/time
     seminar.date = slot.date
@@ -3069,7 +3459,23 @@ async def assign_seminar_to_slot(
         entity_type="slot",
         entity_id=slot.id,
         actor=user.get("id"),
-        details={"seminar_id": seminar.id},
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {
+                    **before_slot,
+                    **before_seminar,
+                },
+                {
+                    "assigned_seminar_id": slot.assigned_seminar_id,
+                    "status": slot.status,
+                    "date": seminar.date,
+                    "start_time": seminar.start_time,
+                    "end_time": seminar.end_time,
+                    "seminar_title": seminar.title,
+                },
+            ),
+            extra={"seminar_id": seminar.id},
+        ),
     )
     
     db.commit()
@@ -3158,7 +3564,18 @@ async def upload_file_with_token(
         entity_type="file",
         entity_id=uploaded.id,
         actor=f"token:{token[:8]}",
-        details={"filename": file.filename, "category": category},
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "filename": uploaded.original_filename,
+                    "category": uploaded.file_category,
+                    "file_size": uploaded.file_size,
+                    "seminar_id": seminar_id,
+                },
+                labels={"file_size": "File Size", "seminar_id": "Seminar"},
+            )
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -3282,6 +3699,13 @@ async def delete_file_with_token(token: str, file_id: int, db: Session = Depends
     file_record = db.get(UploadedFile, file_id)
     if not file_record or file_record.seminar_id != seminar_id:
         raise HTTPException(status_code=404, detail="File not found")
+
+    deleted_snapshot = {
+        "filename": file_record.original_filename,
+        "category": file_record.file_category,
+        "file_size": file_record.file_size,
+        "seminar_id": file_record.seminar_id,
+    }
     
     # Delete from disk
     file_path = Path(settings.uploads_dir) / file_record.storage_filename
@@ -3303,6 +3727,13 @@ async def delete_file_with_token(token: str, file_id: int, db: Session = Depends
         entity_type="file",
         entity_id=file_id,
         actor=f"token:{token[:8]}",
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                deleted_snapshot,
+                {},
+                labels={"file_size": "File Size", "seminar_id": "Seminar"},
+            )
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -3333,6 +3764,18 @@ async def upload_file(
         entity_type="file",
         entity_id=uploaded.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "filename": uploaded.original_filename,
+                    "category": uploaded.file_category,
+                    "file_size": uploaded.file_size,
+                    "seminar_id": seminar_id,
+                },
+                labels={"file_size": "File Size", "seminar_id": "Seminar"},
+            )
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -3385,6 +3828,18 @@ async def upload_file_v1(
         entity_type="file",
         entity_id=uploaded.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "filename": uploaded.original_filename,
+                    "category": uploaded.file_category,
+                    "file_size": uploaded.file_size,
+                    "seminar_id": seminar_id,
+                },
+                labels={"file_size": "File Size", "seminar_id": "Seminar"},
+            )
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -3420,6 +3875,13 @@ async def delete_file_v1(
     file_record = db.get(UploadedFile, file_id)
     if not file_record or file_record.seminar_id != seminar_id:
         raise HTTPException(status_code=404, detail="File not found")
+
+    deleted_snapshot = {
+        "filename": file_record.original_filename,
+        "category": file_record.file_category,
+        "file_size": file_record.file_size,
+        "seminar_id": file_record.seminar_id,
+    }
     
     # Delete from disk
     file_path = Path(settings.uploads_dir) / file_record.storage_filename
@@ -3438,6 +3900,13 @@ async def delete_file_v1(
         entity_type="file",
         entity_id=file_id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                deleted_snapshot,
+                {},
+                labels={"file_size": "File Size", "seminar_id": "Seminar"},
+            )
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -3557,9 +4026,21 @@ async def update_speaker_workflow(
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     workflow = get_or_create_workflow(db, suggestion_id)
-    for key, value in data.model_dump().items():
+    update_data = data.model_dump()
+    before = {
+        key: getattr(workflow, key)
+        for key, value in update_data.items()
+        if value is not None
+    }
+    for key, value in update_data.items():
         if value is not None:
             setattr(workflow, key, value)
+    after = {
+        key: getattr(workflow, key)
+        for key, value in update_data.items()
+        if value is not None
+    }
+    changes = _build_activity_changes(before, after)
     workflow.updated_at = datetime.utcnow()
     db.add(workflow)
     record_activity(
@@ -3570,7 +4051,7 @@ async def update_speaker_workflow(
         entity_type="speaker_suggestion",
         entity_id=suggestion.id,
         actor=user.get("id"),
-        details=data.model_dump(),
+        details=_activity_details_from_changes(changes),
     )
     db.commit()
     refresh_fallback_mirror(db)
@@ -3605,6 +4086,21 @@ async def create_status_token(
         entity_type="speaker_suggestion",
         entity_id=suggestion.id,
         actor=user.get("id"),
+        details=_activity_details_from_changes(
+            _build_activity_changes(
+                {},
+                {
+                    "token_type": "status",
+                    "expires_at": expires_at,
+                    "link": f"/speaker/status/{token}",
+                },
+                labels={
+                    "token_type": "Token Type",
+                    "expires_at": "Expires At",
+                    "link": "Link",
+                },
+            )
+        ),
     )
     db.commit()
     refresh_fallback_mirror(db)

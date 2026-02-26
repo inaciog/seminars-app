@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026 — Expressive Recent Activity with Before/After Diffs
+
+### Change
+Recent Activity now shows structured, field-level change details so edits are explicit:
+- what field changed,
+- what it was before,
+- what it is after,
+- and whether a value was added or removed.
+
+### Backend
+- Added safe, reusable activity diff helpers in [app/main.py](app/main.py) to normalize values and build `changes` payloads.
+- Enriched activity events for key operations (seminar updates, seminar details updates, semester plan create/update, slot create/update, workflow updates).
+- Extended expressive details to additional flows: slot unassign, speaker suggestion create/update, availability submissions, speaker info submissions, assignment flows, file upload/delete flows, and all speaker-token link creation events.
+- Kept storage fully backward-compatible by using existing `activity_events.details_json` (no schema migration, no destructive changes).
+
+### Frontend
+- Updated [frontend/src/modules/seminars/SeminarsModule.tsx](frontend/src/modules/seminars/SeminarsModule.tsx) to render structured activity changes in each Recent Activity card.
+- Added support for new `SLOT_UPDATED` event label.
+- Preserved compatibility with older activity entries that have no `changes` payload.
+
+### Safety
+- No data model changes and no deletions.
+- Existing activity rows remain valid and readable.
+- Verified with backend tests and frontend production build.
+
 ## 2026 — Status Page Always Shows Availability/Info Action Buttons
 
 ### Change

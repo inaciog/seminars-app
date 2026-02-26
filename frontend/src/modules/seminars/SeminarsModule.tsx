@@ -47,8 +47,10 @@ const ACTIVITY_EVENT_CONFIG: Record<string, { label: string; icon: React.Compone
   SEMESTER_PLAN_CREATED: { label: 'Plan created', icon: LayoutGrid, color: 'text-blue-600 bg-blue-50' },
   SEMESTER_PLAN_UPDATED: { label: 'Plan updated', icon: LayoutGrid, color: 'text-blue-600 bg-blue-50' },
   SLOT_CREATED: { label: 'Date added', icon: Calendar, color: 'text-emerald-600 bg-emerald-50' },
+  SLOT_UPDATED: { label: 'Date updated', icon: Calendar, color: 'text-emerald-600 bg-emerald-50' },
   SLOT_UNASSIGNED: { label: 'Slot freed', icon: Calendar, color: 'text-amber-600 bg-amber-50' },
   SPEAKER_SUGGESTED: { label: 'Speaker suggested', icon: UserPlus, color: 'text-indigo-600 bg-indigo-50' },
+  SPEAKER_SUGGESTION_UPDATED: { label: 'Suggestion updated', icon: Edit, color: 'text-indigo-600 bg-indigo-50' },
   AVAILABILITY_LINK_CREATED: { label: 'Availability link sent', icon: LinkIcon, color: 'text-purple-600 bg-purple-50' },
   INFO_LINK_CREATED: { label: 'Info link created', icon: LinkIcon, color: 'text-purple-600 bg-purple-50' },
   AVAILABILITY_SUBMITTED: { label: 'Availability received', icon: CheckCircle, color: 'text-green-600 bg-green-50' },
@@ -69,6 +71,40 @@ function getActivityConfig(eventType: string) {
     icon: Clock3,
     color: 'text-gray-600 bg-gray-50',
   };
+}
+
+type ActivityChange = {
+  field?: string;
+  label?: string;
+  change_type?: 'added' | 'updated' | 'removed' | string;
+  before?: unknown;
+  after?: unknown;
+};
+
+function formatActivityValue(value: unknown): string {
+  if (value == null || value === '') return 'empty';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+function extractActivityChanges(details: unknown): ActivityChange[] {
+  if (!details || typeof details !== 'object') return [];
+  const typed = details as { changes?: ActivityChange[] };
+  if (Array.isArray(typed.changes)) return typed.changes;
+  return [];
+}
+
+function renderActivityChange(change: ActivityChange): string {
+  const label = change.label || change.field || 'Field';
+  if (change.change_type === 'added') {
+    return `${label}: added ${formatActivityValue(change.after)}`;
+  }
+  if (change.change_type === 'removed') {
+    return `${label}: removed ${formatActivityValue(change.before)}`;
+  }
+  return `${label}: ${formatActivityValue(change.before)} → ${formatActivityValue(change.after)}`;
 }
 
 // Speaker Modal Component
@@ -388,6 +424,7 @@ export function SeminarsModule() {
               const config = getActivityConfig(evt.event_type);
               const Icon = config.icon;
               const createdAt = new Date(evt.created_at);
+              const changes = extractActivityChanges(evt.details);
               return (
                 <div
                   key={evt.id}
@@ -412,6 +449,18 @@ export function SeminarsModule() {
                           {formatDistanceToNowUtil(createdAt.toISOString())}
                         </span>
                       </div>
+                      {changes.length > 0 && (
+                        <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 p-2">
+                          {changes.slice(0, 5).map((change, index) => (
+                            <p key={`${evt.id}-change-${index}`} className="text-xs text-gray-700">
+                              {renderActivityChange(change)}
+                            </p>
+                          ))}
+                          {changes.length > 5 && (
+                            <p className="text-xs text-gray-500 mt-1">+{changes.length - 5} more changes</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
