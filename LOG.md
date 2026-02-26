@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026 — Restore Slot Assignment Relinking Fix
+
+### Issue
+After restoring a backup database, semester planning slots were present but did not show linked seminar details (speaker name and talk title) in the date slots.
+
+### Root Cause
+The restore endpoint copied `seminar_slots` without restoring assignment fields (`assigned_seminar_id`, `assigned_suggestion_id`), and did not remap backup IDs to current database IDs for related tables (`speakers`, `rooms`, `seminars`, `speaker_suggestions`).
+
+### Fix
+- Restored `seminar_slots` with dynamic column detection including assignment fields
+- Added ID remapping maps for plans, slots, suggestions, speakers, rooms, and seminars
+- Restored rooms explicitly (with mapping) before seminar restore
+- Remapped seminar `speaker_id` and `room_id` during seminar import
+- Re-applied slot assignments in a dedicated relinking pass after seminars/suggestions are restored
+
+---
+
 ## 2025 — Planning Board Speaker Name Fix
 
 ### Issue

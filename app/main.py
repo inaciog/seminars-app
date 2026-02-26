@@ -4403,16 +4403,26 @@ async def restore_database(
         # Get slots from backup
         backup_slots = []
         try:
-            backup_cursor.execute("SELECT id, semester_plan_id, date, start_time, end_time, room, status FROM seminar_slots")
+            backup_cursor.execute("PRAGMA table_info(seminar_slots)")
+            slot_cols_available = {row[1] for row in backup_cursor.fetchall()}
+            slot_columns = [
+                "id", "semester_plan_id", "date", "start_time", "end_time", "room", "status",
+                "assigned_seminar_id", "assigned_suggestion_id"
+            ]
+            slot_cols_to_select = [col for col in slot_columns if col in slot_cols_available]
+            backup_cursor.execute(f"SELECT {', '.join(slot_cols_to_select)} FROM seminar_slots")
             for row in backup_cursor.fetchall():
+                row_dict = {slot_cols_to_select[i]: row[i] for i in range(len(row))}
                 backup_slots.append({
-                    "id": row[0],
-                    "semester_plan_id": row[1],
-                    "date": row[2],
-                    "start_time": row[3],
-                    "end_time": row[4],
-                    "room": row[5],
-                    "status": row[6]
+                    "id": row_dict.get("id"),
+                    "semester_plan_id": row_dict.get("semester_plan_id"),
+                    "date": row_dict.get("date"),
+                    "start_time": row_dict.get("start_time"),
+                    "end_time": row_dict.get("end_time"),
+                    "room": row_dict.get("room"),
+                    "status": row_dict.get("status"),
+                    "assigned_seminar_id": row_dict.get("assigned_seminar_id"),
+                    "assigned_suggestion_id": row_dict.get("assigned_suggestion_id"),
                 })
         except Exception as e:
             return {"error": f"Failed to read seminar_slots from backup: {e}", "backup_counts": backup_counts}
@@ -4438,6 +4448,12 @@ async def restore_database(
         
         # Now restore the data
         restored = {"semester_plans": 0, "slots": 0, "suggestions": 0, "speakers": 0, "seminars": 0, "rooms": 0}
+        plan_id_map = {}
+        slot_id_map = {}
+        suggestion_id_map = {}
+        speaker_id_map = {}
+        room_id_map = {}
+        seminar_id_map = {}
         
         # Restore semester plans
         for plan_data in backup_plans:
@@ -4464,7 +4480,6 @@ async def restore_database(
             raise HTTPException(status_code=500, detail=f"Failed to commit semester plans: {str(e)}")
         
         # Build ID mapping for plans (backup_id -> new_id)
-        plan_id_map = {}
         for plan_data in backup_plans:
             stmt = select(SemesterPlan).where(SemesterPlan.name == plan_data["name"])
             existing = db.exec(stmt).first()
@@ -4498,7 +4513,10 @@ async def restore_database(
                 # Check if slot already exists
                 stmt = select(SeminarSlot).where(
                     SeminarSlot.semester_plan_id == new_plan_id,
-                    SeminarSlot.date == slot_date
+                    SeminarSlot.date == slot_date,
+                    SeminarSlot.start_time == slot_data["start_time"],
+                    SeminarSlot.end_time == slot_data["end_time"],
+                    SeminarSlot.room == slot_data["room"],
                 )
                 existing = db.exec(stmt).first()
                 if not existing:
@@ -4511,7 +4529,12 @@ async def restore_database(
                         status=slot_data["status"]
                     )
                     db.add(slot)
+                    db.flush()
+                    slot_id_map[slot_data["id"]] = slot.id
                     restored["slots"] += 1
+                else:
+                    existing.status = slot_data["status"] or existing.status
+                    slot_id_map[slot_data["id"]] = existing.id
         
         try:
             db.commit()
@@ -4541,7 +4564,11 @@ async def restore_database(
                         status=sugg_data["status"]
                     )
                     db.add(suggestion)
+                    db.flush()
+                    suggestion_id_map[sugg_data["id"]] = suggestion.id
                     restored["suggestions"] += 1
+                else:
+                    suggestion_id_map[sugg_data["id"]] = existing.id
         
         try:
             db.commit()
@@ -4550,7 +4577,7 @@ async def restore_database(
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to commit suggestions: {str(e)}")
         
-        # Restore speakers and seminars from backup
+        # Restore speakers, rooms and seminars from backup
         backup_conn = sqlite3.connect(str(temp_path))
         backup_cursor = backup_conn.cursor()
         
@@ -4572,23 +4599,35 @@ async def restore_database(
                 # Dynamic mapping: build a dict of column_name -> value
                 row_dict = {cols_to_select[i]: row[i] for i in range(len(row))}
                 
-                # Check if speaker exists by email
+                speaker_id = row_dict.get('id')
+
+                # Check if speaker exists by email first, then by name
+                existing = None
                 if row_dict.get('email'):
                     stmt = select(Speaker).where(Speaker.email == row_dict.get('email'))
                     existing = db.exec(stmt).first()
-                    if not existing:
-                        speaker = Speaker(
-                            name=row_dict.get('name'),
-                            email=row_dict.get('email'),
-                            affiliation=row_dict.get('affiliation'),
-                            website=row_dict.get('website'),
-                            bio=row_dict.get('bio'),
-                            notes=row_dict.get('notes'),
-                            cv_path=row_dict.get('cv_path'),
-                            photo_path=row_dict.get('photo_path')
-                        )
-                        db.add(speaker)
-                        restored["speakers"] += 1
+                if not existing and row_dict.get('name'):
+                    stmt = select(Speaker).where(Speaker.name == row_dict.get('name'))
+                    existing = db.exec(stmt).first()
+
+                if not existing:
+                    speaker = Speaker(
+                        name=row_dict.get('name'),
+                        email=row_dict.get('email'),
+                        affiliation=row_dict.get('affiliation'),
+                        website=row_dict.get('website'),
+                        bio=row_dict.get('bio'),
+                        notes=row_dict.get('notes'),
+                        cv_path=row_dict.get('cv_path'),
+                        photo_path=row_dict.get('photo_path')
+                    )
+                    db.add(speaker)
+                    db.flush()
+                    if speaker_id is not None:
+                        speaker_id_map[speaker_id] = speaker.id
+                    restored["speakers"] += 1
+                elif speaker_id is not None:
+                    speaker_id_map[speaker_id] = existing.id
         except Exception as e:
             logger.error(f"Error restoring speakers: {e}")
             import traceback
@@ -4601,6 +4640,50 @@ async def restore_database(
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to commit speakers: {str(e)}")
         
+        # Restore rooms with dynamic column detection
+        try:
+            backup_cursor.execute("PRAGMA table_info(rooms)")
+            room_cols_available = {row[1] for row in backup_cursor.fetchall()}
+            room_columns = ['id', 'name', 'capacity', 'location', 'equipment']
+            room_cols_to_select = [col for col in room_columns if col in room_cols_available]
+
+            if room_cols_to_select:
+                backup_cursor.execute(f"SELECT {', '.join(room_cols_to_select)} FROM rooms")
+                for row in backup_cursor.fetchall():
+                    row_dict = {room_cols_to_select[i]: row[i] for i in range(len(row))}
+                    backup_room_id = row_dict.get('id')
+                    room_name = row_dict.get('name')
+                    if not room_name:
+                        continue
+
+                    stmt = select(Room).where(Room.name == room_name)
+                    existing = db.exec(stmt).first()
+                    if not existing:
+                        room = Room(
+                            name=room_name,
+                            capacity=row_dict.get('capacity'),
+                            location=row_dict.get('location'),
+                            equipment=row_dict.get('equipment'),
+                        )
+                        db.add(room)
+                        db.flush()
+                        if backup_room_id is not None:
+                            room_id_map[backup_room_id] = room.id
+                        restored["rooms"] += 1
+                    elif backup_room_id is not None:
+                        room_id_map[backup_room_id] = existing.id
+        except Exception as e:
+            logger.error(f"Error restoring rooms: {e}")
+            import traceback
+            traceback.print_exc()
+
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"Error committing rooms: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to commit rooms: {str(e)}")
+
         # Restore seminars with dynamic column detection
         try:
             # Get available columns in backup seminars table
@@ -4631,6 +4714,19 @@ async def restore_database(
                     logger.warning(f"Skipping seminar with unparseable date: {row_dict.get('date')}")
                     continue
                 
+                # Map speaker and room IDs from backup IDs to current DB IDs
+                backup_speaker_id = row_dict.get('speaker_id')
+                mapped_speaker_id = speaker_id_map.get(backup_speaker_id)
+                if not mapped_speaker_id and backup_speaker_id:
+                    sp = db.get(Speaker, backup_speaker_id)
+                    mapped_speaker_id = sp.id if sp else None
+
+                backup_room_id = row_dict.get('room_id')
+                mapped_room_id = room_id_map.get(backup_room_id)
+                if not mapped_room_id and backup_room_id:
+                    rm = db.get(Room, backup_room_id)
+                    mapped_room_id = rm.id if rm else None
+
                 # Check if seminar exists (use parsed date object for comparison)
                 stmt = select(Seminar).where(
                     Seminar.title == row_dict.get('title'),
@@ -4645,8 +4741,8 @@ async def restore_database(
                         date=date_val,
                         start_time=row_dict.get('start_time', '14:00'),
                         end_time=row_dict.get('end_time'),
-                        speaker_id=row_dict.get('speaker_id') or 1,
-                        room_id=row_dict.get('room_id'),
+                        speaker_id=mapped_speaker_id or 1,
+                        room_id=mapped_room_id,
                         abstract=row_dict.get('abstract'),
                         paper_title=row_dict.get('paper_title'),
                         status=row_dict.get('status', 'planned'),
@@ -4658,7 +4754,12 @@ async def restore_database(
                         notes=row_dict.get('notes')
                     )
                     db.add(seminar)
+                    db.flush()
+                    if row_dict.get('id') is not None:
+                        seminar_id_map[row_dict.get('id')] = seminar.id
                     restored["seminars"] += 1
+                elif row_dict.get('id') is not None:
+                    seminar_id_map[row_dict.get('id')] = existing.id
         except Exception as e:
             logger.error(f"Error restoring seminars: {e}")
             import traceback
@@ -4670,6 +4771,40 @@ async def restore_database(
             logger.error(f"Error committing seminars: {e}")
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to commit seminars: {str(e)}")
+
+        # Re-apply slot assignment links using restored ID maps
+        try:
+            for slot_data in backup_slots:
+                backup_slot_id = slot_data.get("id")
+                if backup_slot_id is None:
+                    continue
+
+                current_slot_id = slot_id_map.get(backup_slot_id)
+                if not current_slot_id:
+                    continue
+
+                slot = db.get(SeminarSlot, current_slot_id)
+                if not slot:
+                    continue
+
+                backup_assigned_seminar_id = slot_data.get("assigned_seminar_id")
+                backup_assigned_suggestion_id = slot_data.get("assigned_suggestion_id")
+
+                mapped_assigned_seminar_id = seminar_id_map.get(backup_assigned_seminar_id)
+                mapped_assigned_suggestion_id = suggestion_id_map.get(backup_assigned_suggestion_id)
+
+                if mapped_assigned_seminar_id:
+                    slot.assigned_seminar_id = mapped_assigned_seminar_id
+                if mapped_assigned_suggestion_id:
+                    slot.assigned_suggestion_id = mapped_assigned_suggestion_id
+                if slot_data.get("status"):
+                    slot.status = slot_data.get("status")
+
+            db.commit()
+        except Exception as e:
+            logger.error(f"Error restoring slot assignments: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to restore slot assignments: {str(e)}")
         
         backup_conn.close()
         
