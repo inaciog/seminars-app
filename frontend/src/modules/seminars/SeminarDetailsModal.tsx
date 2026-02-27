@@ -16,6 +16,7 @@ interface SeminarDetails {
   speaker_name: string | null;
   title: string;
   abstract: string | null;
+  notes: string | null;
   room: string | null;
   default_room: string | null;
   has_details: boolean;
@@ -218,7 +219,7 @@ export function SeminarDetailsModal({ seminarId, speakerName, onClose }: Seminar
       formValues.current = {
         title: details.title || '',
         abstract: details.abstract || '',
-        notes: (details as any).notes || '',
+        notes: details.notes || '',
         check_in_date: details.info?.check_in_date || '',
         check_out_date: details.info?.check_out_date || '',
         passport_number: details.info?.passport_number || '',

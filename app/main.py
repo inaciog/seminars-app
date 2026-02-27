@@ -316,6 +316,7 @@ class SpeakerInfoSubmit(BaseModel):
 class SeminarDetailsUpdate(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
+    notes: Optional[str] = None
     room: Optional[str] = None
     check_in_date: Optional[str] = None
     check_out_date: Optional[str] = None
@@ -1911,6 +1912,7 @@ async def get_seminar_details_v1(seminar_id: int, db: Session = Depends(get_db),
         "id": seminar.id,
         "title": seminar.title,
         "abstract": seminar.abstract,
+        "notes": seminar.notes,
         "date": seminar.date.isoformat(),
         "start_time": seminar.start_time,
         "end_time": seminar.end_time,
@@ -1966,6 +1968,7 @@ async def update_seminar_details_v1(
     details_field_labels = {
         "title": "Title",
         "abstract": "Abstract",
+        "notes": "Internal Notes",
         "room": "Room",
         "check_in_date": "Check-in Date",
         "check_out_date": "Check-out Date",
@@ -1998,6 +2001,8 @@ async def update_seminar_details_v1(
         seminar.title = data.title
     if data.abstract is not None:
         seminar.abstract = data.abstract
+    if data.notes is not None:
+        seminar.notes = data.notes
     if data.room is not None and data.room.strip() != '':
         # Find or create room by name
         room_stmt = select(Room).where(Room.name == data.room)
@@ -2021,6 +2026,7 @@ async def update_seminar_details_v1(
     before_snapshot = {
         "title": seminar.title,
         "abstract": seminar.abstract,
+        "notes": seminar.notes,
         "room": seminar.room.name if seminar.room else None,
         "check_in_date": details.check_in_date if details else None,
         "check_out_date": details.check_out_date if details else None,
@@ -2123,6 +2129,7 @@ async def update_seminar_details_v1(
     after_snapshot = {
         "title": seminar.title,
         "abstract": seminar.abstract,
+        "notes": seminar.notes,
         "room": seminar.room.name if seminar.room else None,
         "check_in_date": details.check_in_date,
         "check_out_date": details.check_out_date,

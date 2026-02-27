@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026 — Fix Internal Notes Not Saving in Seminar Details
+
+### Issue
+Internal notes entered in Seminar Details were not persisted after saving.
+
+### Root Cause
+The frontend sent `notes` to `PUT /api/v1/seminars/seminars/{seminar_id}/details`, but `SeminarDetailsUpdate` did not define a `notes` field. Pydantic dropped the unknown field, so `seminar.notes` was never updated.
+
+### Fix
+- Added `notes` to `SeminarDetailsUpdate` in [app/main.py](app/main.py).
+- Updated details `GET` endpoint to return `notes` from `seminar.notes`.
+- Updated details `PUT` endpoint to persist `notes` into `seminar.notes`.
+- Included `notes` in activity diff labels/snapshots so Recent Activity captures this change.
+- Updated frontend details typing in [frontend/src/modules/seminars/SeminarDetailsModal.tsx](frontend/src/modules/seminars/SeminarDetailsModal.tsx) to include `notes` (removed unsafe cast).
+
+### Validation
+- Added regression test in [tests/test_seminars.py](tests/test_seminars.py) to verify notes persistence via details API while confirming `ticket_purchase_info` still persists.
+- Ran `pytest tests/test_seminars.py -q`: all tests passed.
+
 ## 2026 — Expressive Recent Activity with Before/After Diffs
 
 ### Change

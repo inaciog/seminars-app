@@ -141,3 +141,49 @@ def test_delete_seminar(client, auth_headers, db_session):
     db_session.expire_all()
     deleted = db_session.get(Seminar, seminar_id)
     assert deleted is None
+
+
+def test_update_seminar_details_persists_internal_notes(client, auth_headers, db_session):
+    """Internal notes and adjacent seminar details fields persist via details API."""
+    speaker = Speaker(name="Details Speaker", email="details@example.com", affiliation="Test University")
+    room = Room(name="F-606")
+    db_session.add(speaker)
+    db_session.add(room)
+    db_session.commit()
+    db_session.refresh(speaker)
+    db_session.refresh(room)
+
+    seminar = Seminar(
+        title="Details Test Seminar",
+        date=date.today() + timedelta(days=10),
+        start_time="14:00",
+        end_time="15:30",
+        room_id=room.id,
+        speaker_id=speaker.id,
+        status="planned",
+    )
+    db_session.add(seminar)
+    db_session.commit()
+    db_session.refresh(seminar)
+
+    # Ensure details record exists (endpoint auto-creates it)
+    get_response = client.get(f"/api/v1/seminars/seminars/{seminar.id}/details", headers=auth_headers)
+    assert get_response.status_code == 200
+
+    update_payload = {
+        "notes": "Internal scheduling note for organizer",
+        "ticket_purchase_info": "Book refundable fare and keep receipt.",
+    }
+    update_response = client.put(
+        f"/api/v1/seminars/seminars/{seminar.id}/details",
+        json=update_payload,
+        headers=auth_headers,
+    )
+    assert update_response.status_code == 200
+
+    verify_response = client.get(f"/api/v1/seminars/seminars/{seminar.id}/details", headers=auth_headers)
+    assert verify_response.status_code == 200
+    body = verify_response.json()
+
+    assert body["notes"] == "Internal scheduling note for organizer"
+    assert body["info"]["ticket_purchase_info"] == "Book refundable fare and keep receipt."
