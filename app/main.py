@@ -4183,7 +4183,7 @@ async def speaker_status_page(token: str, db: Session = Depends(get_db)):
         warning_box = """
         <div class='warning-box'>
             <div class='warning-title'>⚠️ Ticket Purchase Timing</div>
-            <p>Your seminar is confirmed and you can plan confidently for it to happen. For bureaucratic reimbursement reasons only, please wait for proposal approval before purchasing flight/train tickets.</p>
+            <p>Your seminar is confirmed and you can plan confidently for it to happen. For bureaucratic reimbursement reasons only, <span style='font-weight:700;color:#dc3545;'>please wait for proposal approval before purchasing flight/train tickets.</span></p>
         </div>
         """
     

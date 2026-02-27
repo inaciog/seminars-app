@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026 — Status Page Warning Emphasis Update
+
+### Change
+On the external seminar status page warning box, the sentence
+"please wait for proposal approval before purchasing flight/train tickets."
+is now styled as bold red text for clearer visibility.
+
 ## 2026 — Fix Internal Notes Not Saving in Seminar Details
 
 ### Issue
