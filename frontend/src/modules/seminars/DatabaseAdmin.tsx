@@ -60,7 +60,18 @@ export function DatabaseAdmin() {
       const response = await fetchWithAuth('/api/admin/db/backup', {
         method: 'POST',
       });
-      if (!response.ok) throw new Error('Backup failed');
+      if (!response.ok) {
+        // Try to extract detailed error message from response
+        let errorMessage = 'Backup failed';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.detail || errorData.message || `Backup failed: ${response.statusText}`;
+        } catch {
+          // If JSON parsing fails, use status text
+          errorMessage = `Backup failed: ${response.statusText || 'Unknown error'}`;
+        }
+        throw new Error(errorMessage);
+      }
       return response.blob();
     },
     onSuccess: (blob) => {

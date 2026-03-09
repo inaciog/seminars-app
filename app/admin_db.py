@@ -434,10 +434,24 @@ async def create_backup(
     
     db_path = _get_database_path()
     
+    logger.info(f"Backup requested by user {user.get('id', 'unknown')} for database at {db_path}")
+    
     if not db_path.exists():
+        logger.error(f"Database not found at {db_path}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Database not found at {db_path}"
+        )
+    
+    # Check if database is readable
+    try:
+        db_stat = db_path.stat()
+        logger.info(f"Database file size: {db_stat.st_size} bytes")
+    except Exception as e:
+        logger.error(f"Cannot stat database file: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Cannot access database file: {str(e)}"
         )
     
     # Create backup filename with timestamp
@@ -445,8 +459,11 @@ async def create_backup(
     backup_filename = f"seminars_backup_{timestamp}.db"
     
     # Create a temporary copy to avoid locking issues
+    # Use db_path.parent as fallback since /tmp may not be available or writable on all platforms
     temp_dir = Path("/tmp") if os.access("/tmp", os.W_OK) else db_path.parent
     temp_backup = temp_dir / f"temp_backup_{timestamp}_{uuid.uuid4().hex[:8]}.db"
+    
+    logger.info(f"Starting database backup from {db_path} to {temp_backup}")
     
     try:
         # Use SQLite backup API for consistency
@@ -456,24 +473,41 @@ async def create_backup(
         source.close()
         dest.close()
         
-        # Log the backup
-        with Session(get_engine()) as db:
-            record_activity(
-                db,
-                event_type="database_backup",
-                summary=f"Database backup downloaded: {backup_filename}",
-                actor=user.get('id', 'unknown'),
-                details={"filename": backup_filename, "size_bytes": temp_backup.stat().st_size}
-            )
-            db.commit()
+        # Verify the backup was created
+        if not temp_backup.exists():
+            raise RuntimeError("Backup file was not created")
+        
+        backup_size = temp_backup.stat().st_size
+        logger.info(f"Database backup created successfully: {temp_backup} ({backup_size} bytes)")
+        
+        # Log the backup (non-critical - don't fail if this doesn't work)
+        try:
+            with Session(get_engine()) as db:
+                record_activity(
+                    db,
+                    event_type="database_backup",
+                    summary=f"Database backup downloaded: {backup_filename}",
+                    actor=user.get('id', 'unknown'),
+                    details={"filename": backup_filename, "size_bytes": backup_size}
+                )
+                db.commit()
+        except Exception as log_error:
+            logger.warning(f"Could not log backup activity: {log_error}")
         
         return FileResponse(
             path=temp_backup,
             filename=backup_filename,
-            media_type="application/x-sqlite3",
-            background=None  # File will be cleaned up after response
+            media_type="application/x-sqlite3"
         )
     
+    except sqlite3.Error as e:
+        if temp_backup.exists():
+            temp_backup.unlink()
+        logger.error(f"SQLite backup failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database backup failed: {str(e)}"
+        )
     except Exception as e:
         if temp_backup.exists():
             temp_backup.unlink()
