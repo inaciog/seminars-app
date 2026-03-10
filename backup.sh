@@ -1,6 +1,6 @@
 #!/bin/bash
 # backup.sh - Robust backup script for seminars-app
-# Retention: 180 days
+# Retention: 14 days (reduced from 180 to fit 1GB volume)
 # Includes: Database, uploads, fallback mirror, and automated verification
 
 set -e
@@ -12,7 +12,8 @@ UPLOADS_DIR="${UPLOADS_DIR:-/data/uploads}"
 FALLBACK_MIRROR_DIR="${FALLBACK_MIRROR_DIR:-fallback-mirror}"
 DROPBOX_REMOTE="${DROPBOX_REMOTE:-dropbox:}"
 DROPBOX_BACKUP_PATH="${DROPBOX_BACKUP_PATH:-/seminars-app/backups}"
-RETENTION_DAYS=180
+RETENTION_DAYS=14
+MIN_FREE_MB=100  # Minimum free space required in MB
 DATE=$(date +%Y%m%d_%H%M%S)
 HOSTNAME=$(hostname)
 BACKUP_LOG="$BACKUP_DIR/backup.log"
@@ -24,6 +25,45 @@ mkdir -p "$BACKUP_DIR"
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$BACKUP_LOG"
 }
+
+# Check available disk space before starting
+log "Checking disk space..."
+AVAILABLE_KB=$(df -k "$BACKUP_DIR" | tail -1 | awk '{print $4}')
+AVAILABLE_MB=$((AVAILABLE_KB / 1024))
+
+if [ "$AVAILABLE_MB" -lt "$MIN_FREE_MB" ]; then
+    log "WARNING: Low disk space (${AVAILABLE_MB}MB available, ${MIN_FREE_MB}MB required)"
+    log "Running emergency cleanup of old backups..."
+    
+    # Emergency cleanup - keep only last 3 days
+    find "$BACKUP_DIR" -name "seminars_full_*.tar.gz" -type f -mtime +3 -delete 2>/dev/null || true
+    find "$BACKUP_DIR" -name "seminars_uploads_*.tar.gz" -type f -mtime +3 -delete 2>/dev/null || true
+    find "$BACKUP_DIR" -name "seminars_mirror_*.tar.gz" -type f -mtime +3 -delete 2>/dev/null || true
+    find "$BACKUP_DIR" -name "seminars_db_*.db.gz" -type f -mtime +3 -delete 2>/dev/null || true
+    find "$BACKUP_DIR" -name "backup_manifest_*.txt" -type f -mtime +3 -delete 2>/dev/null || true
+    
+    # Check space again
+    AVAILABLE_KB=$(df -k "$BACKUP_DIR" | tail -1 | awk '{print $4}')
+    AVAILABLE_MB=$((AVAILABLE_KB / 1024))
+    
+    if [ "$AVAILABLE_MB" -lt "$MIN_FREE_MB" ]; then
+        log "ERROR: Still insufficient disk space after cleanup (${AVAILABLE_MB}MB available)"
+        exit 1
+    fi
+    
+    log "Emergency cleanup completed, ${AVAILABLE_MB}MB now available"
+else
+    log "Disk space OK: ${AVAILABLE_MB}MB available"
+fi
+
+# Clean old backups BEFORE creating new ones (to ensure we have space)
+log "Cleaning backups older than $RETENTION_DAYS days..."
+DELETED_DB=$(find "$BACKUP_DIR" -name "seminars_db_*.db*" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
+DELETED_UPLOADS=$(find "$BACKUP_DIR" -name "seminars_uploads_*.tar.gz" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
+DELETED_MIRROR=$(find "$BACKUP_DIR" -name "seminars_mirror_*.tar.gz" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
+DELETED_FULL=$(find "$BACKUP_DIR" -name "seminars_full_*.tar.gz" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
+DELETED_MANIFEST=$(find "$BACKUP_DIR" -name "backup_manifest_*.txt" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
+log "Deleted old backups: $DELETED_DB DB, $DELETED_UPLOADS uploads, $DELETED_MIRROR mirror, $DELETED_FULL full, $DELETED_MANIFEST manifests"
 
 # Create backup filename
 DB_BACKUP="$BACKUP_DIR/seminars_db_${DATE}.db"
@@ -160,15 +200,6 @@ if command -v rclone &> /dev/null; then
 else
     log "rclone not found, skipping Dropbox upload"
 fi
-
-# Clean old backups (older than 180 days)
-log "Cleaning backups older than $RETENTION_DAYS days..."
-DELETED_DB=$(find "$BACKUP_DIR" -name "seminars_db_*.db*" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
-DELETED_UPLOADS=$(find "$BACKUP_DIR" -name "seminars_uploads_*.tar.gz" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
-DELETED_MIRROR=$(find "$BACKUP_DIR" -name "seminars_mirror_*.tar.gz" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
-DELETED_FULL=$(find "$BACKUP_DIR" -name "seminars_full_*.tar.gz" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
-DELETED_MANIFEST=$(find "$BACKUP_DIR" -name "backup_manifest_*.txt" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
-log "Deleted: $DELETED_DB DB, $DELETED_UPLOADS uploads, $DELETED_MIRROR mirror, $DELETED_FULL full backups, $DELETED_MANIFEST manifests"
 
 # List remaining backups
 log ""
