@@ -61,8 +61,9 @@ fly deploy
 ## Backup
 
 Backups run daily via cron:
-- Local backups kept for 180 days
-- Synced to Dropbox
+- Local DB backups and manifests kept for 30 days
+- Local uploads, fallback mirror, and full backup kept only as the latest archive
+- Dropbox sync runs only if `rclone` is configured in the deployed environment
 
 ```bash
 ./backup.sh

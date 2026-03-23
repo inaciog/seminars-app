@@ -1,6 +1,6 @@
 #!/bin/bash
 # backup.sh - Robust backup script for seminars-app
-# Retention: 30 days for database, 1 full backup only
+# Retention: 30 days for database and manifests, latest local uploads/mirror/full only
 # Includes: Database, uploads, fallback mirror, and automated verification
 
 set -e
@@ -35,8 +35,10 @@ if [ "$AVAILABLE_MB" -lt "$MIN_FREE_MB" ]; then
     log "WARNING: Low disk space (${AVAILABLE_MB}MB available, ${MIN_FREE_MB}MB required)"
     log "Running emergency cleanup of old backups..."
     
-    # Emergency cleanup - keep only last 7 days for DB, remove all full backups
+    # Emergency cleanup - keep only last 7 days for DB and manifests, remove all large archives.
     find "$BACKUP_DIR" -name "seminars_full_*.tar.gz" -type f -delete 2>/dev/null || true
+    find "$BACKUP_DIR" -name "seminars_uploads_*.tar.gz" -type f -delete 2>/dev/null || true
+    find "$BACKUP_DIR" -name "seminars_mirror_*.tar.gz" -type f -delete 2>/dev/null || true
     find "$BACKUP_DIR" -name "seminars_db_*.db.gz" -type f -mtime +7 -delete 2>/dev/null || true
     find "$BACKUP_DIR" -name "backup_manifest_*.txt" -type f -mtime +7 -delete 2>/dev/null || true
     
@@ -60,11 +62,18 @@ log "Cleaning DB backups older than $RETENTION_DAYS days..."
 DELETED_DB=$(find "$BACKUP_DIR" -name "seminars_db_*.db*" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
 DELETED_MANIFEST=$(find "$BACKUP_DIR" -name "backup_manifest_*.txt" -type f -mtime +$RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
 
+# Uploads, mirror, and full backup: keep only the latest local archive for each.
+log "Cleaning old uploads backups (keeping only latest local copy)..."
+DELETED_UPLOADS=$(find "$BACKUP_DIR" -name "seminars_uploads_*.tar.gz" -type f -delete -print 2>/dev/null | wc -l)
+
+log "Cleaning old fallback mirror backups (keeping only latest local copy)..."
+DELETED_MIRROR=$(find "$BACKUP_DIR" -name "seminars_mirror_*.tar.gz" -type f -delete -print 2>/dev/null | wc -l)
+
 # Full backup: keep only ONE (delete all previous)
 log "Cleaning old full backups (keeping only one)..."
 DELETED_FULL=$(find "$BACKUP_DIR" -name "seminars_full_*.tar.gz" -type f -delete -print 2>/dev/null | wc -l)
 
-log "Deleted old backups: $DELETED_DB DB, $DELETED_FULL full, $DELETED_MANIFEST manifests"
+log "Deleted old backups: $DELETED_DB DB, $DELETED_UPLOADS uploads, $DELETED_MIRROR mirror, $DELETED_FULL full, $DELETED_MANIFEST manifests"
 
 # Create backup filename
 DB_BACKUP="$BACKUP_DIR/seminars_db_${DATE}.db"

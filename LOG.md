@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026 — Fix Fly Volume Backup Retention Leak
+
+### Issue
+The Fly.io volume was running out of space and backup runs started failing with insufficient free disk, even though the backup script was intended to keep only one full backup locally.
+
+### Root Cause
+`backup.sh` deleted old database backups, manifests, and full backups, but did not delete old `seminars_uploads_*.tar.gz` and `seminars_mirror_*.tar.gz` archives. Those large daily archives accumulated on the 1 GB Fly volume until free space dropped below the backup threshold.
+
+### Fix
+- Updated `backup.sh` to delete old uploads and fallback mirror archives before creating new ones, keeping only the latest local archive for each.
+- Extended emergency cleanup to remove old uploads and mirror archives when disk space is low.
+- Updated backup documentation in `README.md`, `docs/BACKUP_RECOVERY.md`, and `docs/SCHEDULED_BACKUPS.md` to reflect the actual 30-day database retention and latest-only local archive policy.
+
 ## 2026 — Status Page Warning Emphasis Update
 
 ### Change

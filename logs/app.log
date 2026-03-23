@@ -1,75 +1,18 @@
-2026-02-21 23:29:54 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-21 23:29:54 | WARNING  | app.main | <module>:807 | Frontend assets directory not found at startup: frontend/dist/assets
-2026-02-21 23:29:54 | WARNING  | app.main | get_current_user:598 | Authentication failed: No token provided - GET /api/seminars
-2026-02-21 23:29:54 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=invalid-secret "HTTP/1.1 401 Unauthorized"
-2026-02-21 23:30:13 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-21 23:30:13 | WARNING  | app.main | <module>:812 | Frontend assets directory not found at startup: frontend/dist/assets
-2026-02-21 23:30:13 | WARNING  | app.main | get_current_user:603 | Authentication failed: No token provided - GET /api/seminars
-2026-02-21 23:30:13 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=invalid-secret "HTTP/1.1 401 Unauthorized"
-2026-02-21 23:30:51 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-21 23:30:51 | WARNING  | app.main | <module>:814 | Frontend assets directory not found at startup: frontend/dist/assets
-2026-02-21 23:30:51 | WARNING  | app.main | get_current_user:603 | Authentication failed: No token provided - GET /api/seminars
-2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=your-api-secret-for-dashboard "HTTP/1.1 200 OK"
-2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/upcoming?secret=your-api-secret-for-dashboard&limit=5 "HTTP/1.1 200 OK"
-2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=invalid-secret "HTTP/1.1 401 Unauthorized"
-2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars "HTTP/1.1 200 OK"
-2026-02-21 23:30:51 | INFO     | app.main | create_seminar:1212 | Seminar created: New Test Seminar (ID: 2) by test-user
-2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: POST http://testserver/api/seminars "HTTP/1.1 200 OK"
-2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars/3 "HTTP/1.1 200 OK"
-2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: PUT http://testserver/api/seminars/4 "HTTP/1.1 200 OK"
-2026-02-21 23:30:51 | INFO     | httpx | _send_single_request:1025 | HTTP Request: DELETE http://testserver/api/seminars/5 "HTTP/1.1 200 OK"
-2026-02-21 23:40:46 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-21 23:40:46 | WARNING  | app.main | <module>:817 | Frontend assets directory not found at startup: frontend/dist/assets
-2026-02-21 23:40:46 | WARNING  | app.main | get_current_user:606 | Authentication failed: No token provided - GET /api/seminars
-2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=your-api-secret-for-dashboard "HTTP/1.1 200 OK"
-2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/upcoming?secret=your-api-secret-for-dashboard&limit=5 "HTTP/1.1 200 OK"
-2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=invalid-secret "HTTP/1.1 401 Unauthorized"
-2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars "HTTP/1.1 200 OK"
-2026-02-21 23:40:46 | INFO     | app.main | create_seminar:1215 | Seminar created: New Test Seminar (ID: 6) by test-user
-2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: POST http://testserver/api/seminars "HTTP/1.1 200 OK"
-2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars/7 "HTTP/1.1 200 OK"
-2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: PUT http://testserver/api/seminars/8 "HTTP/1.1 200 OK"
-2026-02-21 23:40:46 | INFO     | httpx | _send_single_request:1025 | HTTP Request: DELETE http://testserver/api/seminars/9 "HTTP/1.1 200 OK"
-2026-02-21 23:40:49 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-21 23:40:49 | WARNING  | app.main | <module>:817 | Frontend assets directory not found at startup: frontend/dist/assets
-2026-02-21 23:40:49 | WARNING  | app.main | get_current_user:606 | Authentication failed: No token provided - GET /api/seminars
-2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=your-api-secret-for-dashboard "HTTP/1.1 200 OK"
-2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/upcoming?secret=your-api-secret-for-dashboard&limit=5 "HTTP/1.1 200 OK"
-2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/external/stats?secret=invalid-secret "HTTP/1.1 401 Unauthorized"
-2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars "HTTP/1.1 200 OK"
-2026-02-21 23:40:50 | INFO     | app.main | create_seminar:1215 | Seminar created: New Test Seminar (ID: 2) by test-user
-2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: POST http://testserver/api/seminars "HTTP/1.1 200 OK"
-2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: GET http://testserver/api/seminars/3 "HTTP/1.1 200 OK"
-2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: PUT http://testserver/api/seminars/4 "HTTP/1.1 200 OK"
-2026-02-21 23:40:50 | INFO     | httpx | _send_single_request:1025 | HTTP Request: DELETE http://testserver/api/seminars/5 "HTTP/1.1 200 OK"
-2026-02-24 17:25:17 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:25:17 | WARNING  | app.main | <module>:1229 | Frontend assets directory not found at startup: /Users/inaciobo/github/seminars-app/frontend/dist/assets
-2026-02-24 17:26:04 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:26:04 | WARNING  | app.main | <module>:1228 | Frontend assets directory not found at startup: /Users/inaciobo/github/seminars-app/frontend/dist/assets
-2026-02-24 17:28:50 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:28:50 | WARNING  | app.main | <module>:1009 | Frontend assets directory not found at startup: /Users/inaciobo/github/seminars-app/frontend/dist/assets
-2026-02-24 17:30:24 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:31:06 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:31:51 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:31:52 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:31:52 | WARNING  | app.main | <module>:956 | Frontend assets directory not found at startup: /Users/inaciobo/github/seminars-app/frontend/dist/assets
-2026-02-24 17:35:08 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:35:08 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:43:57 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:43:58 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:44:04 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:44:04 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:59:02 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 17:59:02 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 18:58:23 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 18:58:23 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:01:57 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:01:57 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:03:09 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:03:09 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:05:30 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:05:30 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:10:20 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:10:20 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:15:37 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
-2026-02-24 19:15:37 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-27 11:43:52 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-27 11:43:52 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-27 11:43:52 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-27 11:43:52 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-27 11:45:43 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-27 11:45:43 | INFO     | root | setup_logging:122 | Logging system initialized with 180-day retention
+2026-02-27 11:45:43 | INFO     | httpx | _send_single_request:1026 | HTTP Request: GET http://testserver/api/seminars "HTTP/1.1 200 OK"
+2026-02-27 11:45:43 | INFO     | app.main | create_seminar:1741 | Seminar created: New Test Seminar (ID: 51) by test-user
+2026-02-27 11:45:43 | INFO     | httpx | _send_single_request:1026 | HTTP Request: POST http://testserver/api/seminars "HTTP/1.1 200 OK"
+2026-02-27 11:45:43 | INFO     | httpx | _send_single_request:1026 | HTTP Request: GET http://testserver/api/seminars/52 "HTTP/1.1 200 OK"
+2026-02-27 11:45:43 | INFO     | app.main | refresh_fallback_mirror:787 | Fallback mirror updated at /Users/inaciobo/github/seminars-app/fallback-mirror
+2026-02-27 11:45:43 | INFO     | httpx | _send_single_request:1026 | HTTP Request: PUT http://testserver/api/seminars/53 "HTTP/1.1 200 OK"
+2026-02-27 11:45:43 | INFO     | app.main | refresh_fallback_mirror:787 | Fallback mirror updated at /Users/inaciobo/github/seminars-app/fallback-mirror
+2026-02-27 11:45:43 | INFO     | httpx | _send_single_request:1026 | HTTP Request: DELETE http://testserver/api/seminars/54 "HTTP/1.1 200 OK"
+2026-02-27 11:45:43 | INFO     | httpx | _send_single_request:1026 | HTTP Request: GET http://testserver/api/v1/seminars/seminars/54/details "HTTP/1.1 200 OK"
+2026-02-27 11:45:43 | INFO     | app.main | refresh_fallback_mirror:787 | Fallback mirror updated at /Users/inaciobo/github/seminars-app/fallback-mirror
+2026-02-27 11:45:43 | INFO     | httpx | _send_single_request:1026 | HTTP Request: PUT http://testserver/api/v1/seminars/seminars/54/details "HTTP/1.1 200 OK"
+2026-02-27 11:45:43 | INFO     | httpx | _send_single_request:1026 | HTTP Request: GET http://testserver/api/v1/seminars/seminars/54/details "HTTP/1.1 200 OK"

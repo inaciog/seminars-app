@@ -9,7 +9,8 @@ The backup script (`backup.sh`) handles:
 - Uploaded files backup (CVs, photos, etc.)
 - **Fallback mirror backup** (HTML files for offline access)
 - Upload to Dropbox (if rclone is configured)
-- 180-day retention policy
+- 30-day retention for database backups and manifests
+- Latest-only local retention for uploads, fallback mirror, and full backup archives
 
 ## Setup
 

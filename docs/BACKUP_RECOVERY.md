@@ -31,7 +31,7 @@ This document describes the backup strategy, automated backup procedures, and re
 ### Backup Schedule
 
 - **Frequency**: Daily at 2:00 AM UTC
-- **Retention**: 180 days (6 months)
+- **Retention**: 30 days for database backups and manifests; latest local uploads, fallback mirror, and full backup only
 - **Local Location**: `/data/backups/` on the persistent volume
 - **Offsite Location**: Dropbox (if rclone is configured)
 
@@ -40,7 +40,7 @@ This document describes the backup strategy, automated backup procedures, and re
 1. **Database Backup**: `seminars_db_YYYYMMDD_HHMMSS.db.gz`
 2. **Uploads Backup**: `seminars_uploads_YYYYMMDD_HHMMSS.tar.gz`
 3. **Fallback Mirror**: `seminars_mirror_YYYYMMDD_HHMMSS.tar.gz` (HTML recovery files)
-4. **Full Backup**: `seminars_full_YYYYMMDD_HHMMSS.tar.gz` (includes all above + manifest)
+4. **Full Backup**: `seminars_full_latest.tar.gz` (rolling archive including all above + manifest)
 
 ## Automated Backups
 
@@ -75,7 +75,7 @@ The backup script automatically uploads backups to Dropbox if `rclone` is config
 3. The backup script will automatically:
    - Upload full backups to Dropbox
    - Upload fallback mirror separately for easy access
-   - Clean old backups (older than 180 days) from Dropbox
+   - Clean old backups (older than 30 days) from Dropbox
 
 ### Monitoring Backups
 
@@ -211,8 +211,9 @@ find uploads/ -name "filename.pdf" -exec cp {} /data/uploads/ \;
 
 ## Backup Retention Policy
 
-- **Daily backups**: Kept for 180 days
-- **After 180 days**: Automatically deleted by the backup script
+- **Database backups and manifests**: Kept for 30 days
+- **Uploads, fallback mirror, and full backup archives**: Only the latest local archive is kept before each new run
+- **Dropbox backups**: Cleaned after 30 days when `rclone` is configured
 - **Log retention**: Backup logs are appended indefinitely (monitor size)
 
 ## Storage Requirements
