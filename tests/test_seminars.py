@@ -4,8 +4,16 @@ Tests for seminars API.
 
 import pytest
 from datetime import date, timedelta
+from uuid import uuid4
 
 from app.main import Seminar, Speaker, Room
+
+
+def _current_and_other_term_dates() -> tuple[date, date]:
+    today = date.today()
+    if today.month <= 6:
+        return date(today.year, 4, 10), date(today.year, 9, 10)
+    return date(today.year, 10, 10), date(today.year, 3, 10)
 
 
 def test_list_seminars(client, auth_headers):
@@ -187,3 +195,105 @@ def test_update_seminar_details_persists_internal_notes(client, auth_headers, db
 
     assert body["notes"] == "Internal scheduling note for organizer"
     assert body["info"]["ticket_purchase_info"] == "Book refundable fare and keep receipt."
+
+
+def test_public_page_shows_subscription_links(client, db_session):
+    """Public seminar page exposes live subscription links without auth."""
+    current_term_date, other_term_date = _current_and_other_term_dates()
+    suffix = uuid4().hex[:8]
+
+    speaker = Speaker(name=f"Public Speaker {suffix}", email=f"public-{suffix}@example.com", affiliation="University of Macau")
+    room = Room(name=f"Room {suffix}", location="E22")
+    db_session.add(speaker)
+    db_session.add(room)
+    db_session.commit()
+    db_session.refresh(speaker)
+    db_session.refresh(room)
+
+    current_title = f"Public Calendar Current {suffix}"
+    other_title = f"Public Calendar Other {suffix}"
+    db_session.add(
+        Seminar(
+            title=current_title,
+            date=current_term_date,
+            start_time="14:00",
+            end_time="15:30",
+            room_id=room.id,
+            speaker_id=speaker.id,
+            status="planned",
+        )
+    )
+    db_session.add(
+        Seminar(
+            title=other_title,
+            date=other_term_date,
+            start_time="16:00",
+            end_time="17:00",
+            room_id=room.id,
+            speaker_id=speaker.id,
+            status="planned",
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/public")
+    assert response.status_code == 200
+    assert current_title in response.text
+    assert other_title not in response.text
+    assert "Google Calendar" in response.text
+    assert "Apple Calendar / iCal" in response.text
+    assert "Asia/Macau" in response.text
+    assert "https://calendar.google.com/calendar/u/0/r/settings/addbyurl" in response.text
+    assert "/public/calendar.ics" in response.text
+
+
+def test_public_calendar_feed_is_public_and_current_term_only(client, db_session):
+    """Public ICS feed stays limited to the same term shown on /public."""
+    current_term_date, other_term_date = _current_and_other_term_dates()
+    suffix = uuid4().hex[:8]
+
+    speaker = Speaker(name=f"Calendar Feed Speaker {suffix}", email=f"feed-{suffix}@example.com", affiliation="University of Macau")
+    room = Room(name=f"Calendar Room {suffix}", location="E4")
+    db_session.add(speaker)
+    db_session.add(room)
+    db_session.commit()
+    db_session.refresh(speaker)
+    db_session.refresh(room)
+
+    current_title = f"Calendar Feed Current {suffix}"
+    other_title = f"Calendar Feed Other {suffix}"
+    seminar = Seminar(
+        title=current_title,
+        date=current_term_date,
+        start_time="14:00",
+        end_time="15:30",
+        room_id=room.id,
+        speaker_id=speaker.id,
+        status="planned",
+    )
+    db_session.add(seminar)
+    db_session.add(
+        Seminar(
+            title=other_title,
+            date=other_term_date,
+            start_time="16:00",
+            end_time="17:00",
+            room_id=room.id,
+            speaker_id=speaker.id,
+            status="planned",
+        )
+    )
+    db_session.commit()
+    db_session.refresh(seminar)
+
+    response = client.get("/public/calendar.ics")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/calendar")
+    assert "BEGIN:VCALENDAR" in response.text
+    assert "X-WR-TIMEZONE:Asia/Macau" in response.text
+    assert "TZID:Asia/Macau" in response.text
+    assert current_title in response.text
+    assert other_title not in response.text
+    assert f"UID:seminar-{seminar.id}@" in response.text
+    assert "DTSTART;TZID=Asia/Macau:" in response.text
+    assert "STATUS:CONFIRMED" in response.text

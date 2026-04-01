@@ -17,6 +17,8 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
+          set -euo pipefail
+
           echo "Finding the app machine..."
           # Get the machine ID for the seminars-app (filter by image_ref.repository)
           MACHINE_ID=$(flyctl machine list --app seminars-app --json | jq -r '[.[] | select(.image_ref.repository == "seminars-app")] | first | .id')
@@ -40,12 +42,41 @@ jobs:
             echo "Waiting... ($i/18)"
             sleep 5
           done
+
+          if ! flyctl ssh console --app seminars-app -C "echo ready" 2>/dev/null | grep -q ready; then
+            echo "ERROR: Machine never became ready for SSH"
+            exit 1
+          fi
           
-          echo "Running backup..."
-          flyctl ssh console --app seminars-app -C "/app/backup.sh" || {
-            echo "Backup failed"
+          echo "Launching backup..."
+          flyctl ssh console --app seminars-app -C "sh -lc 'rm -f /data/backups/.backup_status /data/backups/.backup_runner.log; /app/backup.sh > /data/backups/.backup_runner.log 2>&1; status=\$?; printf \"%s\\n\" \"\$status\" > /data/backups/.backup_status; exit 0'" || true
+
+          echo "Waiting for backup completion marker..."
+          STATUS=""
+          for i in {1..24}; do
+            STATUS=$(flyctl ssh console --app seminars-app -C "sh -lc 'if [ -f /data/backups/.backup_status ]; then cat /data/backups/.backup_status; fi'" 2>/dev/null | tr -d '\r' | tail -n 1 || true)
+            if [ -n "$STATUS" ]; then
+              echo "Backup exit status: $STATUS"
+              break
+            fi
+            echo "Waiting for backup completion... ($i/24)"
+            sleep 10
+          done
+
+          echo "Backup log tail:"
+          flyctl ssh console --app seminars-app -C "sh -lc 'tail -n 80 /data/backups/.backup_runner.log 2>/dev/null || tail -n 80 /data/backups/backup.log'" || true
+
+          if [ "$STATUS" != "0" ]; then
+            echo "Backup failed or did not report completion"
+            exit 1
+          fi
+
+          echo "Verifying backup artifacts..."
+          flyctl ssh console --app seminars-app -C "sh -lc 'test -s /data/backups/seminars_full_latest.tar.gz && tar -tzf /data/backups/seminars_full_latest.tar.gz >/dev/null'" || {
+            echo "Backup artifact verification failed"
             exit 1
           }
+
           echo "Backup completed"
 
       - name: Check Backup Status

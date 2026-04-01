@@ -14,13 +14,13 @@ import uuid
 import shutil
 import logging
 import time
-from datetime import datetime, date as date_type, timedelta
+from datetime import datetime, date as date_type, timedelta, timezone
 from pathlib import Path
 from typing import Optional, List, Any
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Form, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
@@ -68,6 +68,7 @@ from app.deletion_handlers import (
 # Initialize logging
 init_logging()
 logger = logging.getLogger(__name__)
+MACAU_TIMEZONE = timezone(timedelta(hours=8), name="Asia/Macau")
 
 # ============================================================================
 # Database Models Section
@@ -416,7 +417,7 @@ async def require_auth(request: Request, call_next):
         return await call_next(request)
     
     # Skip public pages
-    if path == "/public":
+    if path == "/public" or path.startswith("/public/"):
         return await call_next(request)
     
     # Skip speaker token pages and faculty suggestion form (public access)
@@ -1004,6 +1005,207 @@ if not FRONTEND_ASSETS_DIR.exists():
 async def auth_middleware(request: Request, call_next):
     return await require_auth(request, call_next)
 
+
+def get_current_term_window(today: Optional[date_type] = None) -> tuple[str, date_type, date_type]:
+    reference_date = today or date_type.today()
+    if reference_date.month <= 6:
+        return (
+            f"Spring {reference_date.year}",
+            date_type(reference_date.year, 1, 1),
+            date_type(reference_date.year, 6, 30),
+        )
+    return (
+        f"Fall {reference_date.year}",
+        date_type(reference_date.year, 7, 1),
+        date_type(reference_date.year, 12, 31),
+    )
+
+
+def get_public_term_and_seminars(db: Session) -> tuple[str, List[Seminar]]:
+    term_name, start_date, end_date = get_current_term_window()
+    statement = select(Seminar).options(
+        selectinload(Seminar.room),
+        selectinload(Seminar.speaker),
+        selectinload(Seminar.assigned_slot).selectinload(SeminarSlot.plan),
+    ).where(
+        Seminar.date >= start_date,
+        Seminar.date <= end_date,
+    ).order_by(Seminar.date, Seminar.start_time)
+    return term_name, db.exec(statement).all()
+
+
+def get_public_room_details(seminar: Seminar) -> tuple[str, str]:
+    room_name = "TBD"
+    room_location = ""
+    if seminar.room:
+        room_name = seminar.room.name
+        room_location = seminar.room.location or ""
+    elif seminar.assigned_slot:
+        if seminar.assigned_slot.room:
+            room_name = seminar.assigned_slot.room
+        elif seminar.assigned_slot.plan and seminar.assigned_slot.plan.default_room:
+            room_name = seminar.assigned_slot.plan.default_room
+    return room_name, room_location
+
+
+def format_public_time_label(seminar: Seminar) -> str:
+    start_label = (seminar.start_time or "TBD")[:5]
+    if seminar.end_time:
+        return f"{start_label}-{seminar.end_time[:5]}"
+    return start_label
+
+
+def _parse_clock_time(value: Optional[str], fallback: str = "00:00") -> datetime:
+    raw_value = (value or fallback).strip()
+    for time_format in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(raw_value, time_format)
+        except ValueError:
+            continue
+    return datetime.strptime(fallback, "%H:%M")
+
+
+def _as_utc_datetime(value: Optional[datetime]) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _format_ical_timestamp(value: Optional[datetime]) -> str:
+    return _as_utc_datetime(value).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _escape_ical_text(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    escaped = value.replace("\\", "\\\\")
+    escaped = escaped.replace(";", "\\;").replace(",", "\\,")
+    escaped = escaped.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+    return escaped
+
+
+def _fold_ical_line(line: str) -> str:
+    max_length = 75
+    if len(line) <= max_length:
+        return line
+
+    chunks = [line[:max_length]]
+    remaining = line[max_length:]
+    while remaining:
+        chunks.append(f" {remaining[:max_length - 1]}")
+        remaining = remaining[max_length - 1:]
+    return "\r\n".join(chunks)
+
+
+def _build_public_calendar_content(request: Request, term_name: str, seminars: List[Seminar]) -> str:
+    public_page_url = str(request.url_for("public_page"))
+    calendar_host = request.url.hostname or "seminars-app.fly.dev"
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//University of Macau//Economics Seminars//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:{_escape_ical_text(f'University of Macau Economics Seminars ({term_name})')}",
+        "X-WR-TIMEZONE:Asia/Macau",
+        "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
+        "X-PUBLISHED-TTL:PT6H",
+        "BEGIN:VTIMEZONE",
+        "TZID:Asia/Macau",
+        "X-LIC-LOCATION:Asia/Macau",
+        "BEGIN:STANDARD",
+        "TZOFFSETFROM:+0800",
+        "TZOFFSETTO:+0800",
+        "TZNAME:UTC+08",
+        "DTSTART:19700101T000000",
+        "END:STANDARD",
+        "END:VTIMEZONE",
+    ]
+
+    for seminar in seminars:
+        room_name, room_location = get_public_room_details(seminar)
+        speaker_name = seminar.speaker.name if seminar.speaker else "TBD"
+        affiliation = seminar.speaker.affiliation or "" if seminar.speaker else ""
+        location_value = room_name if not room_location else f"{room_name}, {room_location}"
+
+        start_clock = _parse_clock_time(seminar.start_time)
+        start_dt = datetime(
+            seminar.date.year,
+            seminar.date.month,
+            seminar.date.day,
+            start_clock.hour,
+            start_clock.minute,
+            start_clock.second,
+            tzinfo=MACAU_TIMEZONE,
+        )
+
+        if seminar.end_time:
+            end_clock = _parse_clock_time(seminar.end_time, seminar.start_time or "00:00")
+            end_dt = datetime(
+                seminar.date.year,
+                seminar.date.month,
+                seminar.date.day,
+                end_clock.hour,
+                end_clock.minute,
+                end_clock.second,
+                tzinfo=MACAU_TIMEZONE,
+            )
+            if end_dt <= start_dt:
+                end_dt += timedelta(days=1)
+        else:
+            duration_minutes = 60
+            if seminar.assigned_slot and seminar.assigned_slot.plan and seminar.assigned_slot.plan.default_duration_minutes:
+                duration_minutes = seminar.assigned_slot.plan.default_duration_minutes
+            if duration_minutes <= 0:
+                duration_minutes = 60
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+        description_parts = [
+            f"Speaker: {speaker_name}",
+            f"Time: {seminar.date.isoformat()} {format_public_time_label(seminar)} (Asia/Macau)",
+        ]
+        if affiliation:
+            description_parts.insert(1, f"Affiliation: {affiliation}")
+        if location_value:
+            description_parts.append(f"Location: {location_value}")
+        if seminar.paper_title:
+            description_parts.append(f"Paper: {seminar.paper_title}")
+        if seminar.abstract:
+            description_parts.extend(["", seminar.abstract.strip()])
+        description_parts.extend(["", f"Public schedule: {public_page_url}"])
+        description = "\n".join(description_parts)
+
+        updated_at = seminar.updated_at or seminar.created_at
+        sequence = int(_as_utc_datetime(updated_at).timestamp()) if updated_at else 0
+        event_status = "CANCELLED" if (seminar.status or "").lower() == "cancelled" else "CONFIRMED"
+        summary = seminar.title if speaker_name == "TBD" else f"{speaker_name}: {seminar.title}"
+
+        lines.extend(
+            [
+                "BEGIN:VEVENT",
+                f"UID:seminar-{seminar.id}@{calendar_host}",
+                f"DTSTAMP:{_format_ical_timestamp(updated_at)}",
+                f"LAST-MODIFIED:{_format_ical_timestamp(updated_at)}",
+                f"SEQUENCE:{sequence}",
+                f"DTSTART;TZID=Asia/Macau:{start_dt.strftime('%Y%m%dT%H%M%S')}",
+                f"DTEND;TZID=Asia/Macau:{end_dt.strftime('%Y%m%dT%H%M%S')}",
+                f"SUMMARY:{_escape_ical_text(summary)}",
+                f"DESCRIPTION:{_escape_ical_text(description)}",
+                f"LOCATION:{_escape_ical_text(location_value)}",
+                f"URL:{public_page_url}",
+                f"STATUS:{event_status}",
+                "CLASS:PUBLIC",
+                "TRANSP:OPAQUE",
+                "END:VEVENT",
+            ]
+        )
+
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(_fold_ical_line(line) for line in lines) + "\r\n"
+
 # ============================================================================
 # HTML Routes
 # ============================================================================
@@ -1028,67 +1230,28 @@ async def index():
         return f.read()
 
 @app.get("/public", response_class=HTMLResponse)
-async def public_page(db: Session = Depends(get_db)):
+async def public_page(request: Request, db: Session = Depends(get_db)):
     """Public page showing all seminars for the current term - academic/professional style."""
-    
-    # Get current academic year/semester
-    today = date_type.today()
-    current_year = today.year
-    current_month = today.month
-    
-    # Determine current academic term (Spring: Jan-Jun, Fall: Jul-Dec)
-    if current_month <= 6:
-        term_name = f"Spring {current_year}"
-        start_date = date_type(current_year, 1, 1)
-        end_date = date_type(current_year, 6, 30)
-    else:
-        term_name = f"Fall {current_year}"
-        start_date = date_type(current_year, 7, 1)
-        end_date = date_type(current_year, 12, 31)
-    
-    # Get all seminars for the current term, ordered by date
-    statement = select(Seminar).options(
-        selectinload(Seminar.room),
-        selectinload(Seminar.speaker),
-        selectinload(Seminar.assigned_slot).selectinload(SeminarSlot.plan)
-    ).where(
-        Seminar.date >= start_date,
-        Seminar.date <= end_date
-    ).order_by(Seminar.date)
-    
-    seminars = db.exec(statement).all()
-    
-    seminars_html = ""
+    term_name, seminars = get_public_term_and_seminars(db)
+    calendar_http_url = str(request.url_for("public_calendar_feed"))
+    calendar_webcal_url = calendar_http_url.replace("https://", "webcal://", 1).replace("http://", "webcal://", 1)
+    google_calendar_url = f"https://calendar.google.com/calendar/u/0/r/settings/addbyurl?cid={quote(calendar_http_url, safe='')}"
+
+    seminar_rows: List[str] = []
     for s in seminars:
-        speaker = s.speaker
-        room = s.room
-        
-        speaker_name = speaker.name if speaker else "TBD"
-        affiliation = speaker.affiliation or "" if speaker else ""
-        
-        # Get room name with fallback to slot's room or plan's default_room
-        room_name = "TBD"
-        room_location = ""
-        if room:
-            room_name = room.name
-            room_location = room.location or ""
-        elif s.assigned_slot:
-            if s.assigned_slot.room:
-                room_name = s.assigned_slot.room
-            elif s.assigned_slot.plan and s.assigned_slot.plan.default_room:
-                room_name = s.assigned_slot.plan.default_room
-        
-        # Format date: "Mar 15" or "Mar 15-17" for multi-day
+        speaker_name = html_escape(s.speaker.name if s.speaker else "TBD")
+        affiliation = html_escape(s.speaker.affiliation or "") if s.speaker else ""
+        room_name, _ = get_public_room_details(s)
+        title = html_escape(s.title)
+        paper_title = html_escape(s.paper_title or "")
+        abstract = html_escape(s.abstract or "")
+        room_label = html_escape(room_name)
+
         date_str = s.date.strftime("%b %d")
         day_of_week = s.date.strftime("%a")
-        
-        # Format time
-        time_str = s.start_time[:5]  # "14:00" from "14:00:00"
-        if s.end_time:
-            time_str = f"{s.start_time[:5]}–{s.end_time[:5]}"
-        
-        # Build seminar row HTML - compact academic style
-        seminar_row = f"""
+        time_str = html_escape(format_public_time_label(s))
+
+        seminar_rows.append(f"""
         <tr class="seminar-row">
             <td class="date-cell">
                 <div class="day">{day_of_week}</div>
@@ -1096,19 +1259,19 @@ async def public_page(db: Session = Depends(get_db)):
             </td>
             <td class="time-cell">{time_str}</td>
             <td class="details-cell">
-                <div class="title">{s.title}</div>
+                <div class="title">{title}</div>
                 <div class="speaker">
                     <span class="speaker-name">{speaker_name}</span>
                     {f'<span class="affiliation">{affiliation}</span>' if affiliation else ''}
                 </div>
-                {f'<div class="paper">{s.paper_title}</div>' if s.paper_title else ''}
-                {f'<div class="abstract-text">{s.abstract}</div>' if s.abstract else ''}
+                {f'<div class="paper">{paper_title}</div>' if paper_title else ''}
+                {f'<div class="abstract-text">{abstract}</div>' if abstract else ''}
             </td>
-            <td class="location-cell">{room_name}</td>
+            <td class="location-cell">{room_label}</td>
         </tr>
-        """
-        seminars_html += seminar_row
-    
+        """)
+
+    seminars_html = "".join(seminar_rows)
     if not seminars_html:
         seminars_html = """
         <tr>
@@ -1219,6 +1382,86 @@ async def public_page(db: Session = Depends(get_db)):
                 padding: 4px 12px;
                 border: 1px solid var(--um-border);
                 margin-top: 8px;
+            }}
+
+            .calendar-subscribe {{
+                margin-bottom: 24px;
+                padding: 18px 20px;
+                border: 1px solid var(--um-border);
+                background: linear-gradient(135deg, #f7f9fc 0%, #ffffff 100%);
+            }}
+
+            .calendar-subscribe h2 {{
+                font-size: 18px;
+                color: var(--um-blue);
+                margin-bottom: 6px;
+                font-weight: normal;
+                font-family: Georgia, serif;
+            }}
+
+            .calendar-subscribe p {{
+                font-size: 13px;
+                color: var(--um-gray);
+                max-width: 760px;
+            }}
+
+            .calendar-actions {{
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-top: 14px;
+            }}
+
+            .calendar-button {{
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 10px 14px;
+                border: 1px solid var(--um-blue);
+                background: var(--um-blue);
+                color: white;
+                text-decoration: none;
+                font-size: 13px;
+                letter-spacing: 0.3px;
+            }}
+
+            .calendar-button.secondary {{
+                background: white;
+                color: var(--um-blue);
+            }}
+
+            .calendar-button.ghost {{
+                background: transparent;
+                color: var(--um-blue);
+                border-color: var(--um-border);
+            }}
+
+            .calendar-feed-label {{
+                margin-top: 16px;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                color: var(--um-gray);
+            }}
+
+            .calendar-feed-url {{
+                margin-top: 8px;
+                padding: 10px 12px;
+                border: 1px dashed var(--um-border);
+                background: white;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                overflow-wrap: anywhere;
+            }}
+
+            .calendar-feed-url a {{
+                color: var(--um-blue);
+                text-decoration: none;
+            }}
+
+            .calendar-note {{
+                margin-top: 10px;
+                font-size: 12px;
             }}
             
             /* Seminar table - compact academic style */
@@ -1357,6 +1600,8 @@ async def public_page(db: Session = Depends(get_db)):
             /* Responsive */
             @media (max-width: 768px) {{
                 .um-name {{ display: none; }}
+                .calendar-actions {{ flex-direction: column; }}
+                .calendar-button {{ width: 100%; }}
                 .seminars-table {{ font-size: 13px; }}
                 .date-cell {{ width: 60px; }}
                 .time-cell {{ width: 70px; }}
@@ -1382,8 +1627,23 @@ async def public_page(db: Session = Depends(get_db)):
         <main class="container">
             <div class="page-header">
                 <h1>Economics Seminars</h1>
-                <div class="term-badge">{term_name}</div>
+                <div class="term-badge">{html_escape(term_name)}</div>
             </div>
+
+            <section class="calendar-subscribe" aria-labelledby="calendar-subscribe-title">
+                <h2 id="calendar-subscribe-title">Subscribe to the Seminar Calendar</h2>
+                <p>These links subscribe to the live public seminar calendar, so updates to this page stay in sync in your calendar. Times are published in Asia/Macau (UTC+8).</p>
+                <div class="calendar-actions">
+                    <a class="calendar-button" href="{html_escape(google_calendar_url)}" target="_blank" rel="noopener noreferrer">Google Calendar</a>
+                    <a class="calendar-button secondary" href="{html_escape(calendar_webcal_url)}">Apple Calendar / iCal</a>
+                    <a class="calendar-button ghost" href="{html_escape(calendar_http_url)}">Open ICS Feed</a>
+                </div>
+                <div class="calendar-feed-label">Subscription URL</div>
+                <div class="calendar-feed-url">
+                    <a href="{html_escape(calendar_http_url)}">{html_escape(calendar_http_url)}</a>
+                </div>
+                <p class="calendar-note">Google Calendar subscriptions are added through Google's Add by URL flow. If your browser opens Google without prefilling the feed URL, copy the subscription URL shown above.</p>
+            </section>
             
             <table class="seminars-table">
                 <thead>
@@ -1410,6 +1670,20 @@ async def public_page(db: Session = Depends(get_db)):
     </body>
     </html>
     """
+
+
+@app.get("/public/calendar.ics", name="public_calendar_feed")
+async def public_calendar_feed(request: Request, db: Session = Depends(get_db)):
+    term_name, seminars = get_public_term_and_seminars(db)
+    calendar_content = _build_public_calendar_content(request, term_name, seminars)
+    return Response(
+        content=calendar_content,
+        media_type="text/calendar",
+        headers={
+            "Content-Disposition": 'inline; filename="um-economics-seminars.ics"',
+            "Cache-Control": "public, max-age=300",
+        },
+    )
 
 # Speaker token pages (public, no auth required)
 @app.get("/speaker/availability/{token}", response_class=HTMLResponse)

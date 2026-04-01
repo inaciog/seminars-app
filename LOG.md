@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026 — Add Public Subscribeable Seminar Calendar Feed
+
+### Change
+The public seminars page now exposes a live public calendar feed that tracks the same current-term schedule shown on `/public`.
+
+### What Was Added
+- Added a public ICS endpoint at `/public/calendar.ics` for subscription-based calendar clients.
+- Added Google Calendar, Apple Calendar / iCal, and direct ICS feed links to the public page.
+- Published the feed in the Macau timezone (`Asia/Macau`, UTC+8) and included stable event UIDs so client subscriptions can sync schedule updates.
+- Kept the public page and the ICS feed backed by the same seminar selection logic so both stay aligned.
+
+## 2026 — Harden Fly Backup Workflow Against SSH Exit Reporting Failures
+
+### Issue
+The GitHub Actions backup job started reporting failure with `ssh shell: wait: remote command exited without exit status or exit signal` even when the Fly volume showed that the backup files had been created successfully.
+
+### Root Cause
+The backup workflow trusted the exit code returned by `flyctl ssh console -C "/app/backup.sh"`. On April 1, the backup completed far enough to create `seminars_full_latest.tar.gz`, but the SSH client did not receive a clean remote exit status and the workflow marked the run as failed.
+
+### Fix
+- Updated `.github/workflows/backup.yml` to launch the backup through a remote shell that writes the real script exit code to `/data/backups/.backup_status`.
+- Added polling for the completion marker and explicit post-run verification that `seminars_full_latest.tar.gz` exists and passes `tar -tzf` integrity validation.
+- Kept the underlying `backup.sh` behavior unchanged because the failure was in workflow transport/reporting, not backup creation.
+
 ## 2026 — Fix Fly Volume Backup Retention Leak
 
 ### Issue
